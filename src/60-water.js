@@ -1,12 +1,16 @@
 /* ------------------------------------------------------------------
-   Vandet. Ægte plan-spejling (scenen renderes en ekstra gang fra et
-   spejlvendt kamera), krusninger, dybdefarve og solglimt.
+   Vandet.
+
+   Tre ting bygger billedet op: en spejling (scenen renderes igen fra et
+   kamera spejlet i overfladen), en brydning (scenen uden vand, forskudt
+   af bølgerne, så man ser sten og grus nede i det lave vand), og et bagt
+   dybdekort, der styrer hvor meget lys der bliver slugt undervejs.
+   Oveni ligger skum langs kanten og solglimt på krusningerne.
    ------------------------------------------------------------------ */
 (function () {
   const O = window.OASIS;
   const M = O.math;
 
-  // Bag et dybdekort ud fra terrænet, så vandet ved hvor lavt der er.
   function bakeDepthTexture(res) {
     const size = O.config.worldSize;
     const data = new Uint8Array(res * res * 4);
@@ -14,11 +18,10 @@
       const z = (j / (res - 1) - 0.5) * size;
       for (let i = 0; i < res; i++) {
         const x = (i / (res - 1) - 0.5) * size;
-        const h = O.world.height(x, z);
-        const depth = O.config.waterLevel - h;
+        const depth = O.config.waterLevel - O.world.height(x, z);
         const k = (j * res + i) * 4;
-        data[k] = M.clamp(depth / 3.0, 0, 1) * 255;        // dybde
-        data[k + 1] = M.clamp((depth + 0.25) / 0.5, 0, 1) * 255; // blød vandkant
+        data[k] = M.clamp(depth / 3.0, 0, 1) * 255;
+        data[k + 1] = M.clamp((depth + 0.4) / 0.8, 0, 1) * 255;
         data[k + 2] = 255;
         data[k + 3] = 255;
       }
@@ -36,12 +39,14 @@
     uniform mat4 uTextureMatrix;
     varying vec4 vReflectCoord;
     varying vec3 vWorld;
+    varying vec4 vScreen;
     void main() {
       vec4 world = modelMatrix * vec4(position, 1.0);
       vWorld = world.xyz;
       vReflectCoord = uTextureMatrix * world;
       vec4 mvPosition = viewMatrix * world;
       gl_Position = projectionMatrix * mvPosition;
+      vScreen = gl_Position;
       #include <fog_vertex>
     }
   `;
@@ -49,40 +54,31 @@
   const FRAG = `
     #include <common>
     #include <fog_pars_fragment>
+
     uniform sampler2D uReflect;
+    uniform sampler2D uRefract;
     uniform sampler2D uDepthMap;
+    uniform sampler2D uNormalMap;
+    uniform sampler2D uFoam;
     uniform float uTime;
     uniform float uWorldSize;
     uniform vec3 uSun;
     uniform vec3 uSunColor;
     uniform vec3 uCamPos;
+    uniform float uDebug;
     varying vec4 vReflectCoord;
+    varying vec4 vScreen;
     varying vec3 vWorld;
 
-    float hash21(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-    float vnoise(vec2 p){
-      vec2 i = floor(p), f = fract(p);
-      vec2 u = f * f * (3.0 - 2.0 * f);
-      return mix(mix(hash21(i), hash21(i + vec2(1.0, 0.0)), u.x),
-                 mix(hash21(i + vec2(0.0, 1.0)), hash21(i + vec2(1.0, 1.0)), u.x), u.y);
+    // Store dønninger som få sinusser — de bærer den langsomme bevægelse.
+    float swell(vec2 p) {
+      return sin(p.x * 0.30 + p.y * 0.21 + uTime * 0.75) * 0.55
+           + sin(p.x * -0.23 + p.y * 0.47 + uTime * 0.95) * 0.40;
     }
 
-    // Sum af krusninger — billigt, men giver den rigtige uro på fladen.
-    float waveHeight(vec2 p, float detail) {
-      float h = 0.0;
-      h += sin(p.x * 0.42 + p.y * 0.28 + uTime * 0.9) * 0.55;
-      h += sin(p.x * -0.31 + p.y * 0.63 + uTime * 1.15) * 0.42;
-      h += sin(p.x * 0.93 - p.y * 0.71 + uTime * 1.9) * 0.20 * detail;
-      h += sin(p.x * 1.71 + p.y * 1.42 + uTime * 2.6) * 0.11 * detail;
-      h += sin(p.x * 3.10 - p.y * 2.60 + uTime * 3.4) * 0.05 * detail;
-      return h;
-    }
-
-    vec3 waveNormal(vec2 p, float detail, float scale) {
-      float e = 0.35;
-      float hx = waveHeight(p + vec2(e, 0.0), detail) - waveHeight(p - vec2(e, 0.0), detail);
-      float hz = waveHeight(p + vec2(0.0, e), detail) - waveHeight(p - vec2(0.0, e), detail);
-      return normalize(vec3(-hx * scale, 1.0, -hz * scale));
+    vec3 sampleNormal(vec2 p, float scale, vec2 drift) {
+      vec3 n = texture2D(uNormalMap, p * scale + drift * uTime).xyz * 2.0 - 1.0;
+      return n;
     }
 
     void main() {
@@ -92,81 +88,125 @@
       if (depth <= 0.004) discard;
 
       float dist = length(uCamPos - vWorld);
-      float detail = 1.0 - smoothstep(18.0, 90.0, dist);   // dæmp fine bølger langt væk
-      vec3 n = waveNormal(vWorld.xz, detail, 0.16 + 0.10 * detail);
+      float detail = 1.0 - smoothstep(22.0, 120.0, dist);
+
+      // Krusninger i tre lag der driver hver sin vej — det er dét, der
+      // gør fladen levende i stedet for regelmæssig.
+      vec3 n1 = sampleNormal(vWorld.xz, 0.055, vec2(0.004, 0.0026));
+      vec3 n2 = sampleNormal(vWorld.xz, 0.145, vec2(-0.0032, 0.0045));
+      vec3 n3 = sampleNormal(vWorld.xz, 0.420, vec2(0.0075, -0.0060));
+      vec2 ripple = n1.xy * 0.75 + n2.xy * 0.5 * detail + n3.xy * 0.28 * detail;
+
+      float e = 0.6;
+      vec2 sw = vec2(swell(vWorld.xz + vec2(e, 0.0)) - swell(vWorld.xz - vec2(e, 0.0)),
+                     swell(vWorld.xz + vec2(0.0, e)) - swell(vWorld.xz - vec2(0.0, e)));
+
+      // Krusningerne dæmpes inde på det lave vand. Hældningerne skal holdes
+      // små — stille vand er nærmest et spejl, og selv få graders ekstra
+      // hældning ødelægger både spejlingen og fresnel-effekten.
+      float shallowDamp = smoothstep(0.02, 0.45, depth);
+      vec3 n = normalize(vec3(-(ripple.x * 0.10 + sw.x * 0.045) * shallowDamp,
+                              1.0,
+                              -(ripple.y * 0.10 + sw.y * 0.045) * shallowDamp));
 
       vec3 viewDir = normalize(uCamPos - vWorld);
-      float fres = pow(1.0 - clamp(dot(viewDir, n), 0.0, 1.0), 4.0);
-      fres = mix(0.03, 1.0, fres);
+      float ndv = clamp(dot(viewDir, n), 0.0, 1.0);
+      float fres = 0.02 + 0.98 * pow(1.0 - ndv, 5.0);
 
-      // Spejlingen forskydes af krusningerne — mindre på det lave vand.
-      float distort = mix(0.008, 0.055, smoothstep(0.0, 1.2, depth));
+      // --- Brydning: bunden set gennem vandet ---
+      vec2 screenUv = (vScreen.xy / vScreen.w) * 0.5 + 0.5;
+      float refrAmt = mix(0.004, 0.030, smoothstep(0.0, 1.4, depth)) * (0.4 + 0.6 * detail);
+      vec3 bottom = texture2D(uRefract, clamp(screenUv + n.xz * refrAmt, 0.002, 0.998)).rgb;
+
+      // Lyset slukkes med dybden, og vandet får sin egen farve.
+      // Rødt lys forsvinder først, men langsomt — vandet er klart, og man
+      // skal kunne se sandet ligge lige under overfladen.
+      vec3 absorb = vec3(0.36, 0.10, 0.05);
+      vec3 trans = exp(-absorb * depth * 1.1);
+      vec3 scatter = mix(vec3(0.06, 0.15, 0.15), vec3(0.02, 0.08, 0.13), smoothstep(0.5, 2.6, depth));
+      vec3 body = bottom * trans + scatter * (1.0 - trans);
+
+      // Kaustik: bølgerne samler sollys i lyse bånd på bunden.
+      float caus = swell(vWorld.xz * 1.9 + n.xz * 3.0) + texture2D(uNormalMap, vWorld.xz * 0.09 + uTime * vec2(0.006, 0.004)).z;
+      caus = pow(clamp(caus * 0.45 + 0.35, 0.0, 1.0), 5.0);
+      body += uSunColor * caus * 0.55 * (1.0 - smoothstep(0.05, 1.6, depth)) * trans;
+
+      // --- Spejling ---
+      float distort = mix(0.006, 0.045, smoothstep(0.0, 1.2, depth));
       vec2 ruv = vReflectCoord.xy / max(vReflectCoord.w, 0.0001);
       ruv += n.xz * distort;
-      vec3 reflection = texture2D(uReflect, clamp(ruv, 0.001, 0.999)).rgb;
-
-      // Bunden set gennem vandet. Den bliver "spist" af dybden, så det
-      // lave vand er sandfarvet og det dybe grønblåt.
-      vec2 bedUv = vWorld.xz + n.xz * 1.6;          // svag brydning
-      float bedGrain = vnoise(bedUv * 1.7) * 0.35 + vnoise(bedUv * 0.35) * 0.3;
-      vec3 bedColor = vec3(0.60, 0.50, 0.36) * (0.72 + bedGrain);
-
-      // Kaustik: lysnet fra bølgerne der samler sig på bunden.
-      float caus = waveHeight(vWorld.xz * 1.15 + n.xz * 2.0, detail);
-      caus = pow(clamp(caus * 0.5 + 0.6, 0.0, 1.0), 4.0);
-      bedColor += vec3(1.0, 0.92, 0.72) * caus * 0.34 * (1.0 - smoothstep(0.2, 2.0, depth));
-
-      float extinction = exp(-depth * 1.05);
-      vec3 tint = mix(vec3(0.30, 0.44, 0.38), vec3(0.05, 0.15, 0.20), smoothstep(0.5, 2.4, depth));
-      vec3 body = mix(tint, bedColor, extinction);
+      vec3 reflection = texture2D(uReflect, clamp(ruv, 0.002, 0.998)).rgb;
 
       vec3 col = mix(body, reflection, fres);
 
-      // Solglimt.
+      // --- Solglimt ---
       vec3 hvec = normalize(normalize(uSun) + viewDir);
-      float spec = pow(max(dot(n, hvec), 0.0), 220.0);
-      col += uSunColor * spec * 1.6;
-      col += uSunColor * pow(max(dot(n, hvec), 0.0), 22.0) * 0.06;
+      float ndh = max(dot(n, hvec), 0.0);
+      col += uSunColor * pow(ndh, 700.0) * 3.0;
+      col += uSunColor * pow(ndh, 60.0) * 0.07;
 
-      // Blød vandkant, så bredden ikke skæres over af en hård linje.
-      float edge = smoothstep(0.0, 0.12, depth);
-      float alpha = mix(0.35, 0.97, edge);
+      // --- Skum langs vandkanten ---
+      float edge = 1.0 - smoothstep(0.0, 0.05, depth);
+      float band = sin(depth * 90.0 - uTime * 1.4 + swell(vWorld.xz * 2.0) * 2.0) * 0.5 + 0.5;
+      float foamTex = texture2D(uFoam, vWorld.xz * 0.7 + n.xz * 0.05 + uTime * vec2(0.004, 0.003)).r;
+      float foam = clamp(edge * (0.35 + 0.65 * band) * smoothstep(0.35, 0.8, foamTex), 0.0, 1.0);
+      col = mix(col, vec3(0.88, 0.87, 0.83), foam * 0.4);
 
-      gl_FragColor = vec4(col, alpha);
+      float alpha = mix(0.45, 0.98, smoothstep(0.0, 0.14, depth));
+      alpha = max(alpha, foam * 0.55);
+
+      if (uDebug > 1.5) { gl_FragColor = vec4(reflection, 1.0); }
+      else if (uDebug > 0.5) { gl_FragColor = vec4(bottom, 1.0); }
+      else { gl_FragColor = vec4(col, alpha); }
+      #include <tonemapping_fragment>
       #include <fog_fragment>
     }
   `;
 
   O.buildWater = function (scene, renderer, camera, sky) {
     const size = O.config.worldSize;
-    const geo = new THREE.PlaneGeometry(size, size, 96, 96);
+    const geo = new THREE.PlaneGeometry(size, size, 128, 128);
     geo.rotateX(-Math.PI / 2);
 
-    const pixelRatio = Math.min(window.devicePixelRatio, 2);
-    const rtW = Math.floor(window.innerWidth * pixelRatio * 0.5);
-    const rtH = Math.floor(window.innerHeight * pixelRatio * 0.5);
-    const renderTarget = new THREE.WebGLRenderTarget(rtW, rtH, {
-      minFilter: THREE.LinearFilter,
-      magFilter: THREE.LinearFilter,
-      format: THREE.RGBAFormat,
-      encoding: THREE.sRGBEncoding
-    });
+    const tex = O.textures.build();
+    const pr = Math.min(window.devicePixelRatio, 2);
+    // Hjælpebillederne gemmes uden tonekurve, så de skal kunne rumme værdier
+    // over 1 — i en almindelig 8-bit buffer ville himmel og solbelyst klippe
+    // blive klippet til hvidt, og vandet ville se ud som mælk.
+    const hdr = renderer.capabilities.isWebGL2;
+    function makeTarget(scale) {
+      const rt = new THREE.WebGLRenderTarget(
+        Math.max(2, Math.floor(window.innerWidth * pr * scale)),
+        Math.max(2, Math.floor(window.innerHeight * pr * scale)),
+        { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
+          format: THREE.RGBAFormat, encoding: THREE.LinearEncoding,
+          type: hdr ? THREE.HalfFloatType : THREE.UnsignedByteType }
+      );
+      rt.userData = { scale: scale };
+      return rt;
+    }
+    const reflectRT = makeTarget(0.55);
+    const refractRT = makeTarget(0.42);
 
     const uniforms = THREE.UniformsUtils.merge([
       THREE.UniformsLib.fog,
       {
-        uReflect: { value: null },
-        uDepthMap: { value: null },
+        uReflect: { value: null }, uRefract: { value: null },
+        uDepthMap: { value: null }, uNormalMap: { value: null }, uFoam: { value: null },
         uTextureMatrix: { value: new THREE.Matrix4() },
         uTime: { value: 0 },
         uWorldSize: { value: size },
         uSun: { value: new THREE.Vector3() },
-        uSunColor: { value: new THREE.Color(1.0, 0.92, 0.78) },
-        uCamPos: { value: new THREE.Vector3() }
+        uSunColor: { value: new THREE.Color(1.0, 0.93, 0.80) },
+        uCamPos: { value: new THREE.Vector3() },
+        uDebug: { value: 0 }
       }
     ]);
-    uniforms.uReflect.value = renderTarget.texture;
+    uniforms.uReflect.value = reflectRT.texture;
+    uniforms.uRefract.value = refractRT.texture;
     uniforms.uDepthMap.value = bakeDepthTexture(512);
+    uniforms.uNormalMap.value = tex.waterNormal;
+    uniforms.uFoam.value = tex.foam;
     uniforms.uSun.value = sky.sun.clone();
 
     const mat = new THREE.ShaderMaterial({
@@ -194,10 +234,28 @@
     const rotation = new THREE.Matrix4();
     const texMatrix = new THREE.Matrix4();
 
-    function updateReflection(scene, hideList) {
+    function update(scene, hideList, doRefract) {
+      // Begge hjælpebilleder skal være scene-refererede: tonekurven må først
+      // lægges på til allersidst, når vandets egen farve er blandet i.
+      const oldTone = renderer.toneMapping;
+      if (hdr) renderer.toneMapping = THREE.NoToneMapping;
+
+      const restore = [];
+      mesh.visible = false;
+      for (const obj of hideList) { restore.push([obj, obj.visible]); obj.visible = false; }
+
+      // 1) Brydning: scenen som den ser ud gennem overfladen. Står man
+      //    langt fra vandet, ser man alligevel kun spejlingen — så springes
+      //    hele det ekstra pas over.
+      if (doRefract !== false) {
+        renderer.setRenderTarget(refractRT);
+        renderer.clear();
+        renderer.render(scene, camera);
+      }
+
+      // 2) Spejling.
       view.subVectors(mirrorPos, camera.position);
       view.reflect(normal).negate().add(mirrorPos);
-
       rotation.extractRotation(camera.matrixWorld);
       lookAt.set(0, 0, -1).applyMatrix4(rotation).add(camera.position);
       target.subVectors(mirrorPos, lookAt);
@@ -206,10 +264,10 @@
       reflectCam.position.copy(view);
       reflectCam.up.set(0, 1, 0).applyMatrix4(rotation).reflect(normal);
       reflectCam.lookAt(target);
+      reflectCam.near = camera.near;
       reflectCam.far = camera.far;
       reflectCam.fov = camera.fov;
       reflectCam.aspect = camera.aspect;
-      reflectCam.near = camera.near;
       reflectCam.updateMatrixWorld();
       reflectCam.updateProjectionMatrix();
 
@@ -218,35 +276,26 @@
       texMatrix.multiply(reflectCam.matrixWorldInverse);
       uniforms.uTextureMatrix.value.copy(texMatrix);
 
-      const restore = [];
-      mesh.visible = false;
-      for (const obj of hideList) { restore.push([obj, obj.visible]); obj.visible = false; }
-
-      const currentXR = renderer.xr.enabled;
-      renderer.xr.enabled = false;
-      renderer.setRenderTarget(renderTarget);
+      renderer.setRenderTarget(reflectRT);
       renderer.clear();
       renderer.render(scene, reflectCam);
-      renderer.setRenderTarget(null);
-      renderer.xr.enabled = currentXR;
 
+      renderer.setRenderTarget(null);
+      renderer.toneMapping = oldTone;
       mesh.visible = true;
       for (const [obj, v] of restore) obj.visible = v;
     }
 
     function resize() {
-      const pr = Math.min(window.devicePixelRatio, 2);
-      renderTarget.setSize(
-        Math.max(2, Math.floor(window.innerWidth * pr * 0.5)),
-        Math.max(2, Math.floor(window.innerHeight * pr * 0.5))
-      );
+      const p = Math.min(window.devicePixelRatio, 2);
+      for (const rt of [reflectRT, refractRT]) {
+        rt.setSize(
+          Math.max(2, Math.floor(window.innerWidth * p * rt.userData.scale)),
+          Math.max(2, Math.floor(window.innerHeight * p * rt.userData.scale))
+        );
+      }
     }
 
-    return {
-      mesh: mesh,
-      uniforms: uniforms,
-      update: updateReflection,
-      resize: resize
-    };
+    return { mesh: mesh, uniforms: uniforms, update: update, resize: resize };
   };
 })();

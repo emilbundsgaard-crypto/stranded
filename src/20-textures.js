@@ -1,42 +1,76 @@
 /* ------------------------------------------------------------------
-   Alle teksturer tegnes i browseren med canvas — ingen filer at
-   hente, så scenen kan åbnes direkte uden nogen assets.
+   Alle teksturer tegnes i browseren med canvas — ingen filer at hente.
+
+   Ud over farve- og normalkort laves der også ruhedskort (hårde
+   sandstensbænke er blankere end de bløde), et fint detaljekort der
+   lægges oven på alt i høj tæthed, og et storskala-kort der bryder
+   gentagelsen i sandet.
    ------------------------------------------------------------------ */
 (function () {
   const O = window.OASIS;
   const M = O.math;
 
-  function canvas(size, h) {
+  /* ---- Hurtig støj (heltalshash i stedet for sin) — teksturerne skal
+         genereres på under et sekund. ---- */
+  function ihash(x, y) {
+    let h = Math.imul(x | 0, 374761393) + Math.imul(y | 0, 668265263) | 0;
+    h = Math.imul(h ^ (h >>> 13), 1274126177) | 0;
+    return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+  }
+  function tnoise(x, y) {
+    const xi = Math.floor(x), yi = Math.floor(y);
+    const xf = x - xi, yf = y - yi;
+    const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+    const a = ihash(xi, yi), b = ihash(xi + 1, yi);
+    const c = ihash(xi, yi + 1), d = ihash(xi + 1, yi + 1);
+    return (a + (b - a) * u) + ((c + (d - c) * u) - (a + (b - a) * u)) * v;
+  }
+  function tfbm(x, y, oct) {
+    let s = 0, a = 0.5, f = 1, n = 0;
+    for (let i = 0; i < oct; i++) { s += a * tnoise(x * f, y * f); n += a; a *= 0.5; f *= 2.03; }
+    return s / n;
+  }
+  function tridged(x, y, oct) {
+    let s = 0, a = 0.5, f = 1, n = 0;
+    for (let i = 0; i < oct; i++) {
+      const v = 1 - Math.abs(tnoise(x * f, y * f) * 2 - 1);
+      s += a * v * v; n += a; a *= 0.55; f *= 2.11;
+    }
+    return s / n;
+  }
+
+  let maxAniso = 8;
+
+  function canvas(w, h) {
     const c = document.createElement('canvas');
-    c.width = size;
-    c.height = h || size;
+    c.width = w; c.height = h || w;
     return c;
   }
 
-  function toTexture(c, repeat) {
+  function toTexture(c, repeat, srgb) {
     const t = new THREE.CanvasTexture(c);
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    t.anisotropy = 8;
+    t.anisotropy = maxAniso;
     if (repeat) t.repeat.set(repeat, repeat);
+    if (srgb) t.encoding = THREE.sRGBEncoding;
     return t;
   }
 
-  // Sobel-filter der laver et normalkort ud fra en gråtoneskitse.
+  // Normalkort ud fra en gråtonehøjde (Sobel).
   function normalFromHeight(src, strength) {
-    const s = src.width, hgt = src.height;
-    const sctx = src.getContext('2d');
-    const data = sctx.getImageData(0, 0, s, hgt).data;
-    const out = canvas(s, hgt);
+    const w = src.width, h = src.height;
+    const data = src.getContext('2d').getImageData(0, 0, w, h).data;
+    const out = canvas(w, h);
     const octx = out.getContext('2d');
-    const img = octx.createImageData(s, hgt);
-    const at = (x, y) => data[((y + hgt) % hgt * s + ((x + s) % s)) * 4] / 255;
-    for (let y = 0; y < hgt; y++) {
-      for (let x = 0; x < s; x++) {
+    const img = octx.createImageData(w, h);
+    const at = (x, y) => data[(((y + h) % h) * w + ((x + w) % w)) * 4] / 255;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
         const dx = (at(x + 1, y) - at(x - 1, y)) * strength;
         const dy = (at(x, y + 1) - at(x, y - 1)) * strength;
-        let nx = -dx, ny = -dy, nz = 1;
-        const l = Math.hypot(nx, ny, nz);
-        const i = (y * s + x) * 4;
+        const nx = -dx, ny = -dy, nz = 1;
+        const l = Math.sqrt(nx * nx + ny * ny + 1);
+        const i = (y * w + x) * 4;
         img.data[i] = (nx / l * 0.5 + 0.5) * 255;
         img.data[i + 1] = (ny / l * 0.5 + 0.5) * 255;
         img.data[i + 2] = (nz / l * 0.5 + 0.5) * 255;
@@ -47,123 +81,261 @@
     return out;
   }
 
-  /* ---- Sand ---- */
+  /* ---------- Sand ---------- */
   function sandMaps() {
     const S = 512;
-    const col = canvas(S);
-    const hgt = canvas(S);
-    const cctx = col.getContext('2d');
-    const hctx = hgt.getContext('2d');
-    const ci = cctx.createImageData(S, S);
-    const hi = hctx.createImageData(S, S);
+    const col = canvas(S), hgt = canvas(S), rough = canvas(S);
+    const ci = col.getContext('2d').createImageData(S, S);
+    const hi = hgt.getContext('2d').createImageData(S, S);
+    const ri = rough.getContext('2d').createImageData(S, S);
     for (let y = 0; y < S; y++) {
       for (let x = 0; x < S; x++) {
         const i = (y * S + x) * 4;
-        const grain = M.fbm(x * 0.35, y * 0.35, 3);
-        const ripple = Math.sin((x * 0.055 + M.fbm(x * 0.02, y * 0.02, 2) * 3.0)) * 0.5;
-        const speck = M.hash2(x, y) > 0.985 ? 0.32 : 0;
-        const v = 0.5 + grain * 0.14 + ripple * 0.06 + speck;
-        ci.data[i] = M.clamp(214 * v + 34, 0, 255);
-        ci.data[i + 1] = M.clamp(184 * v + 26, 0, 255);
-        ci.data[i + 2] = M.clamp(142 * v + 16, 0, 255);
+        const grain = tfbm(x * 0.9, y * 0.9, 3) - 0.5;
+        const micro = tnoise(x * 3.1, y * 3.1) - 0.5;
+        // To sæt vindribber i lidt forskellig retning.
+        const r1 = Math.sin((x * 0.10 + y * 0.035) + tfbm(x * 0.02, y * 0.02, 3) * 7.0);
+        const r2 = Math.sin((x * 0.035 - y * 0.075) + tfbm(x * 0.015, y * 0.03, 2) * 5.0);
+        const ripple = r1 * 0.6 + r2 * 0.4;
+        const speck = ihash(x, y) > 0.9955 ? 1 : 0;
+        const dark = ihash(x + 7, y + 13) > 0.997 ? 1 : 0;
+
+        const v = 0.52 + grain * 0.22 + micro * 0.10 + ripple * 0.055 + speck * 0.34 - dark * 0.28;
+        ci.data[i] = M.clamp(198 * v + 44, 0, 255);
+        ci.data[i + 1] = M.clamp(170 * v + 34, 0, 255);
+        ci.data[i + 2] = M.clamp(130 * v + 24, 0, 255);
         ci.data[i + 3] = 255;
-        const hv = M.clamp((0.5 + grain * 0.4 + ripple * 0.35 + speck) * 255, 0, 255);
-        hi.data[i] = hi.data[i + 1] = hi.data[i + 2] = hv;
-        hi.data[i + 3] = 255;
+
+        const hv = M.clamp((0.5 + grain * 0.5 + micro * 0.35 + ripple * 0.30 + speck * 0.6) * 255, 0, 255);
+        hi.data[i] = hi.data[i + 1] = hi.data[i + 2] = hv; hi.data[i + 3] = 255;
+
+        // Små sten og skaller er blankere end selve sandet.
+        const rv = M.clamp((0.92 - speck * 0.45 - Math.max(0, micro) * 0.2) * 255, 0, 255);
+        ri.data[i] = ri.data[i + 1] = ri.data[i + 2] = rv; ri.data[i + 3] = 255;
       }
     }
-    cctx.putImageData(ci, 0, 0);
-    hctx.putImageData(hi, 0, 0);
-    return { color: col, normal: normalFromHeight(hgt, 2.2) };
+    col.getContext('2d').putImageData(ci, 0, 0);
+    hgt.getContext('2d').putImageData(hi, 0, 0);
+    rough.getContext('2d').putImageData(ri, 0, 0);
+    return { color: col, normal: normalFromHeight(hgt, 2.6), rough: rough };
   }
 
-  /* ---- Sandsten med vandrette lag ---- */
+  /* ---------- Sandsten ---------- */
   function rockMaps() {
     const S = 512;
-    const col = canvas(S);
-    const hgt = canvas(S);
-    const cctx = col.getContext('2d');
-    const hctx = hgt.getContext('2d');
-    const ci = cctx.createImageData(S, S);
-    const hi = hctx.createImageData(S, S);
+    const col = canvas(S), hgt = canvas(S), rough = canvas(S);
+    const ci = col.getContext('2d').createImageData(S, S);
+    const hi = hgt.getContext('2d').createImageData(S, S);
+    const ri = rough.getContext('2d').createImageData(S, S);
 
-    // Lagfarver — varme sandstenstoner som i en tør kløft. Færre og
-    // tykkere bånd, så klippen ikke ligner fløjlsbukser.
-    const bands = [];
-    for (let i = 0; i < 20; i++) {
-      bands.push({
-        y: i / 20,
-        tint: 0.86 + M.hash2(i * 1.7, 2.9) * 0.24,
-        warm: M.hash2(i * 5.1, 11.3)
+    // Bænke med hver sin tykkelse, farve og hårdhed.
+    const beds = [];
+    let yy = 0;
+    while (yy < 1) {
+      const t = 0.018 + ihash(beds.length * 13, 7) * 0.055;
+      beds.push({
+        y0: yy, y1: Math.min(1, yy + t),
+        tint: 0.80 + ihash(beds.length * 5, 11) * 0.42,
+        warm: ihash(beds.length * 3, 29),
+        hard: ihash(beds.length * 17, 5) > 0.45
       });
+      yy += t;
+    }
+    function bedAt(v) {
+      for (let i = 0; i < beds.length; i++) if (v >= beds[i].y0 && v < beds[i].y1) return beds[i];
+      return beds[beds.length - 1];
     }
 
     for (let y = 0; y < S; y++) {
-      const v = y / S;
-      let band = bands[0];
-      for (let i = 0; i < bands.length; i++) if (bands[i].y <= v) band = bands[i];
       for (let x = 0; x < S; x++) {
         const i = (y * S + x) * 4;
-        // Lagene bølger let, så de ikke ser tegnede ud.
-        const warp = M.fbm(x * 0.009, y * 0.035, 3) * 9.0;
-        const yy = y + warp;
-        const layer = Math.sin(yy * 0.22) * 0.5 + 0.5;
-        const fine = Math.sin(yy * 1.1) * 0.5 + 0.5;
-        const grain = M.fbm(x * 0.07, yy * 0.34, 4);
-        const crack = M.ridged(x * 0.03, yy * 0.016, 3);
-        // Lodret "desert varnish" der bryder det vandrette mønster.
-        const varnish = M.fbm(x * 0.05, yy * 0.006, 3) * 0.5 + 0.5;
-        const shade = 0.70 + layer * 0.13 + fine * 0.05 + grain * 0.13
-                    - Math.pow(crack, 3.0) * 0.28 - Math.pow(varnish, 2.5) * 0.16;
-        const tint = band.tint * shade;
-        ci.data[i] = M.clamp(198 * tint + 34, 0, 255);
-        ci.data[i + 1] = M.clamp(139 * tint * (0.92 + band.warm * 0.16) + 22, 0, 255);
-        ci.data[i + 2] = M.clamp(94 * tint * (0.82 + band.warm * 0.28) + 12, 0, 255);
+        // Lagene bølger, så de ikke ligner streger tegnet med lineal.
+        const warp = tfbm(x * 0.006, y * 0.02, 3) * 26 - 13;
+        const yy2 = y + warp;
+        const bed = bedAt(M.clamp(yy2 / S, 0, 0.999));
+
+        // Lamination inde i hver bænk.
+        const lam = Math.sin(yy2 * 0.9 + tfbm(x * 0.02, yy2 * 0.05, 2) * 6) * 0.5 + 0.5;
+        const grain = tfbm(x * 0.16, yy2 * 0.55, 4) - 0.5;
+        const crack = tridged(x * 0.045, yy2 * 0.022, 4);
+        // Lodret "desert varnish" der løber ned ad væggen.
+        const varnish = tfbm(x * 0.075, yy2 * 0.004, 3);
+        const pit = tridged(x * 0.5, yy2 * 0.5, 2);
+
+        const shade = 0.76 + lam * 0.17 + grain * 0.22
+                    - Math.pow(crack, 2.6) * 0.22
+                    - Math.pow(varnish, 3.0) * 0.22
+                    - Math.pow(pit, 8.0) * 0.10;
+        const tint = bed.tint * shade * (bed.hard ? 1.05 : 0.95);
+
+        ci.data[i] = M.clamp(206 * tint + 30, 0, 255);
+        ci.data[i + 1] = M.clamp(142 * tint * (0.90 + bed.warm * 0.20) + 20, 0, 255);
+        ci.data[i + 2] = M.clamp(92 * tint * (0.78 + bed.warm * 0.34) + 12, 0, 255);
         ci.data[i + 3] = 255;
-        const hv = M.clamp((0.45 + layer * 0.28 + fine * 0.12 + grain * 0.2
-                    - Math.pow(crack, 3.0) * 0.45) * 255, 0, 255);
-        hi.data[i] = hi.data[i + 1] = hi.data[i + 2] = hv;
-        hi.data[i + 3] = 255;
+
+        const hv = M.clamp((0.46 + lam * 0.22 + grain * 0.42
+                    - Math.pow(crack, 2.2) * 0.55 - Math.pow(pit, 6.0) * 0.4) * 255, 0, 255);
+        hi.data[i] = hi.data[i + 1] = hi.data[i + 2] = hv; hi.data[i + 3] = 255;
+
+        const rv = M.clamp(((bed.hard ? 0.72 : 0.94) + grain * 0.12 + Math.pow(crack, 2.2) * 0.2) * 255, 0, 255);
+        ri.data[i] = ri.data[i + 1] = ri.data[i + 2] = rv; ri.data[i + 3] = 255;
       }
     }
-    cctx.putImageData(ci, 0, 0);
-    hctx.putImageData(hi, 0, 0);
-    return { color: col, normal: normalFromHeight(hgt, 3.4) };
+    col.getContext('2d').putImageData(ci, 0, 0);
+    hgt.getContext('2d').putImageData(hi, 0, 0);
+    rough.getContext('2d').putImageData(ri, 0, 0);
+    return { color: col, normal: normalFromHeight(hgt, 4.2), rough: rough };
   }
 
-  /* ---- Græstot (alfa-tekstur til billboards) ---- */
+  /* ---------- Sten (småsten, nedfald, kampesten) ---------- */
+  // Sandsten i stort format duer ikke på en enkelt sten — lagene smører
+  // sig ud. Småsten får deres egen kornede tekstur.
+  function stoneMaps() {
+    const S = 256;
+    const col = canvas(S), hgt = canvas(S);
+    const ci = col.getContext('2d').createImageData(S, S);
+    const hi = hgt.getContext('2d').createImageData(S, S);
+    for (let y = 0; y < S; y++) {
+      for (let x = 0; x < S; x++) {
+        const i = (y * S + x) * 4;
+        const base = tfbm(x * 0.05, y * 0.05, 4);       // store pletter
+        const grain = tfbm(x * 0.6, y * 0.6, 3);        // korn
+        const fleck = ihash(x, y) > 0.988 ? 0.5 : 0;    // lyse krystaller
+        const dark = ihash(x + 3, y + 9) > 0.992 ? -0.35 : 0;
+        const crack = tridged(x * 0.12, y * 0.12, 3);
+        const v = 0.46 + (base - 0.5) * 0.42 + (grain - 0.5) * 0.30 + fleck + dark
+                - Math.pow(crack, 4.0) * 0.22;
+        const warm = 0.86 + base * 0.28;
+        ci.data[i] = M.clamp(196 * v * warm + 26, 0, 255);
+        ci.data[i + 1] = M.clamp(178 * v * (0.94 + base * 0.1) + 24, 0, 255);
+        ci.data[i + 2] = M.clamp(154 * v * 0.92 + 22, 0, 255);
+        ci.data[i + 3] = 255;
+        const hv = M.clamp((0.45 + (grain - 0.5) * 0.7 + fleck - Math.pow(crack, 4.0) * 0.6) * 255, 0, 255);
+        hi.data[i] = hi.data[i + 1] = hi.data[i + 2] = hv; hi.data[i + 3] = 255;
+      }
+    }
+    col.getContext('2d').putImageData(ci, 0, 0);
+    hgt.getContext('2d').putImageData(hi, 0, 0);
+    return { color: col, normal: normalFromHeight(hgt, 2.4) };
+  }
+
+  /* ---------- Fin detalje der lægges oven på alt ---------- */
+  function detailNormalMap() {
+    const S = 256;
+    const h = canvas(S);
+    const ctx = h.getContext('2d');
+    const img = ctx.createImageData(S, S);
+    for (let y = 0; y < S; y++) {
+      for (let x = 0; x < S; x++) {
+        const i = (y * S + x) * 4;
+        const v = tfbm(x * 1.7, y * 1.7, 3) * 0.6 + tnoise(x * 6.0, y * 6.0) * 0.4;
+        const c = M.clamp(v * 255, 0, 255);
+        img.data[i] = img.data[i + 1] = img.data[i + 2] = c;
+        img.data[i + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    return normalFromHeight(h, 1.6);
+  }
+
+  /* ---------- Storskala-variation (bryder gentagelsen) ---------- */
+  function macroMap() {
+    const S = 256;
+    const c = canvas(S);
+    const ctx = c.getContext('2d');
+    const img = ctx.createImageData(S, S);
+    for (let y = 0; y < S; y++) {
+      for (let x = 0; x < S; x++) {
+        const i = (y * S + x) * 4;
+        const v = 0.5 + (tfbm(x * 0.022, y * 0.022, 4) - 0.5) * 0.55;
+        img.data[i] = M.clamp(v * 262, 0, 255);
+        img.data[i + 1] = M.clamp(v * 254, 0, 255);
+        img.data[i + 2] = M.clamp(v * 242, 0, 255);
+        img.data[i + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    return c;
+  }
+
+  /* ---------- Græstot ---------- */
   function grassTexture() {
-    const W = 128, H = 128;
+    const W = 256, H = 256;
     const c = canvas(W, H);
     const ctx = c.getContext('2d');
     ctx.clearRect(0, 0, W, H);
     const rnd = M.mulberry32(9182);
-    // Bredt fæste og strå der bøjer udad — som de tørre totter langs vandet.
-    for (let i = 0; i < 40; i++) {
-      const x0 = 14 + rnd() * (W - 28);
+
+    for (let i = 0; i < 64; i++) {
+      const x0 = 22 + rnd() * (W - 44);
       const dir = x0 < W / 2 ? -1 : 1;
-      const lean = dir * (8 + rnd() * 42) * (0.4 + rnd());
-      const h = H * (0.34 + rnd() * 0.52);
-      const wBlade = 2.6 + rnd() * 3.4;
+      const lean = dir * (18 + rnd() * 92) * (0.4 + rnd() * 1.0);
+      const h = H * (0.30 + rnd() * 0.58);
+      const wBlade = 3.0 + rnd() * 5.0;
       const dry = rnd();
       const g = ctx.createLinearGradient(0, H, 0, H - h);
-      g.addColorStop(0, 'rgba(44,52,22,1)');
-      g.addColorStop(0.4, dry > 0.5 ? 'rgba(118,116,48,1)' : 'rgba(78,102,38,1)');
-      g.addColorStop(1, dry > 0.5 ? 'rgba(152,140,74,1)' : 'rgba(104,124,52,1)');
+      g.addColorStop(0, 'rgba(52,62,24,1)');
+      g.addColorStop(0.35, dry > 0.5 ? 'rgba(132,130,58,1)' : 'rgba(88,120,42,1)');
+      g.addColorStop(0.8, dry > 0.5 ? 'rgba(186,174,96,1)' : 'rgba(136,162,70,1)');
+      g.addColorStop(1, dry > 0.5 ? 'rgba(214,200,128,1)' : 'rgba(166,186,96,1)');
       ctx.strokeStyle = g;
       ctx.lineWidth = wBlade;
       ctx.lineCap = 'round';
       ctx.beginPath();
-      ctx.moveTo(x0, H + 4);
-      ctx.quadraticCurveTo(x0 + lean * 0.25, H - h * 0.62, x0 + lean, H - h);
+      ctx.moveTo(x0, H + 6);
+      ctx.quadraticCurveTo(x0 + lean * 0.22, H - h * 0.66, x0 + lean, H - h);
       ctx.stroke();
     }
+
+
     const t = new THREE.CanvasTexture(c);
     t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+    t.anisotropy = maxAniso;
+    t.encoding = THREE.sRGBEncoding;
     return t;
   }
 
-  /* ---- Blødt lys-punkt til ild, glimt og støv ---- */
+  /* ---------- Bølgenormaler ---------- */
+  function waterNormalMap() {
+    const S = 256;
+    const h = canvas(S);
+    const ctx = h.getContext('2d');
+    const img = ctx.createImageData(S, S);
+    for (let y = 0; y < S; y++) {
+      for (let x = 0; x < S; x++) {
+        const i = (y * S + x) * 4;
+        // Langstrakte krusninger i to retninger, som vind over stille vand.
+        const v = tfbm(x * 0.055, y * 0.11, 4) * 0.6
+                + tfbm(x * 0.19, y * 0.09, 3) * 0.4;
+        const c = M.clamp(v * 255, 0, 255);
+        img.data[i] = img.data[i + 1] = img.data[i + 2] = c;
+        img.data[i + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    return normalFromHeight(h, 2.1);
+  }
+
+  /* ---------- Skum til vandkanten ---------- */
+  function foamTexture() {
+    const S = 256;
+    const c = canvas(S);
+    const ctx = c.getContext('2d');
+    const img = ctx.createImageData(S, S);
+    for (let y = 0; y < S; y++) {
+      for (let x = 0; x < S; x++) {
+        const i = (y * S + x) * 4;
+        const v = tfbm(x * 0.09, y * 0.09, 4) * 0.65 + tfbm(x * 0.35, y * 0.35, 3) * 0.35;
+        const f = M.clamp((v - 0.34) * 3.4, 0, 1);
+        img.data[i] = img.data[i + 1] = img.data[i + 2] = f * 255;
+        img.data[i + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    return toTexture(c, 1, false);
+  }
+
+  /* ---------- Lyspunkter ---------- */
   function glowTexture(inner, outer) {
     const S = 128;
     const c = canvas(S);
@@ -179,22 +351,30 @@
 
   let cache = null;
   O.textures = {
-    build: function () {
+    build: function (renderer) {
       if (cache) return cache;
+      if (renderer) maxAniso = Math.min(16, renderer.capabilities.getMaxAnisotropy());
       const sand = sandMaps();
       const rock = rockMaps();
+      const detail = detailNormalMap();
+      const stone = stoneMaps();
       cache = {
-        sand: toTexture(sand.color, 64),
-        sandNormal: toTexture(sand.normal, 64),
-        rock: toTexture(rock.color, 1),
+        sand: toTexture(sand.color, 56, true),
+        sandNormal: toTexture(sand.normal, 56),
+        sandRough: toTexture(sand.rough, 56),
+        rock: toTexture(rock.color, 1, true),
         rockNormal: toTexture(rock.normal, 1),
+        rockRough: toTexture(rock.rough, 1),
+        detailNormal: toTexture(detail, 1),
+        stone: toTexture(stone.color, 2, true),
+        stoneNormal: toTexture(stone.normal, 2),
+        macro: toTexture(macroMap(), 1),
         grass: grassTexture(),
+        foam: foamTexture(),
+        waterNormal: toTexture(waterNormalMap(), 1),
         glow: glowTexture(),
         spark: glowTexture('rgba(255,255,255,1)', 'rgba(200,230,255,0.5)')
       };
-      cache.sand.encoding = THREE.sRGBEncoding;
-      cache.rock.encoding = THREE.sRGBEncoding;
-      cache.grass.encoding = THREE.sRGBEncoding;
       return cache;
     }
   };

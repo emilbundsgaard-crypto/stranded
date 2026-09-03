@@ -14,7 +14,7 @@
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.outputEncoding = THREE.sRGBEncoding;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 0.94;
+    renderer.toneMappingExposure = 0.78;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -23,16 +23,17 @@
     scene.add(camera);
 
     const timeUniform = { value: 0 };
-    let tex, sky, terrain, cliffs, water, props, stones, player, audio;
+    let tex, sky, terrain, cliffs, water, props, stones, player, audio, post;
 
     const steps = [
-      ['Blander sand og sten…', function () { tex = O.textures.build(); }],
-      ['Rejser himlen…', function () { sky = O.buildSky(scene); }],
+      ['Blander sand og sten…', function () { tex = O.textures.build(renderer); }],
+      ['Rejser himlen…', function () { sky = O.buildSky(scene, renderer); }],
       ['Former flodlejet…', function () { terrain = O.buildTerrain(scene, tex); }],
       ['Stabler kløftens lag…', function () { cliffs = O.buildCliffs(scene, tex); }],
       ['Fylder vand i oasen…', function () { water = O.buildWater(scene, renderer, camera, sky); }],
       ['Sår græs og tænder bål…', function () { props = O.buildProps(scene, tex, timeUniform); }],
       ['Spreder sten på bredden…', function () { stones = O.buildStones(scene, tex); }],
+      ['Blander farverne…', function () { post = O.buildPost(renderer, scene, camera); }],
       ['Snører støvlerne…', function () {
         player = O.buildPlayer(camera, canvas);
         audio = O.buildAudio();
@@ -63,7 +64,7 @@
       let t = 0;
       let stepDistance = 0;
       let frames = 0, frameAcc = 0, reflectSkip = 0, quality = 1;
-      const hideInReflection = [player.hand, stones.highlight];
+      const hideInReflection = [player.hand, stones.highlight, props.detailGroup];
 
       // Startskærmen ligger oven på lærredet, så klikket fanges på
       // dokumentet — ellers ville man aldrig komme i gang.
@@ -110,6 +111,7 @@
         camera.aspect = window.innerWidth / window.innerHeight;
         camera.updateProjectionMatrix();
         renderer.setSize(window.innerWidth, window.innerHeight);
+        post.resize();
         water.resize();
       });
 
@@ -138,9 +140,9 @@
 
         // Skyggekeglen følger spilleren, så skyggerne altid er skarpe.
         sky.light.position.set(
-          player.pos.x + sky.sun.x * 120,
-          sky.sun.y * 120,
-          player.pos.z + sky.sun.z * 120
+          player.pos.x + sky.sun.x * 180,
+          sky.sun.y * 180,
+          player.pos.z + sky.sun.z * 180
         );
         sky.light.target.position.set(player.pos.x, 0, player.pos.z);
         sky.light.target.updateMatrixWorld();
@@ -149,13 +151,18 @@
         water.uniforms.uTime.value = t;
         water.uniforms.uCamPos.value.copy(camera.position);
 
-        // Spejlingen opdateres hver frame — eller hver anden, hvis maskinen er presset.
+        // Spejlingen opdateres hver frame — eller hver anden, hvis maskinen
+        // er presset. Er der slet intet vand i nærheden, springes begge de
+        // ekstra pas over.
         reflectSkip++;
-        if (quality === 1 || reflectSkip % 2 === 0) {
-          water.update(scene, hideInReflection);
+        const rv = O.world.river(camera.position.x, camera.position.z);
+        const toWater = rv.d - rv.w;
+        if (toWater < 170 && (quality === 1 || reflectSkip % 2 === 0)) {
+          water.update(scene, hideInReflection, toWater < 40);
         }
 
-        renderer.render(scene, camera);
+        post.render(dt, t);
+        O.debug.frames++;
 
         // Enkel automatisk kvalitetsjustering.
         frameAcc += dt; frames++;
@@ -165,8 +172,11 @@
             quality = 0;
             pixelRatio = Math.min(pixelRatio, 1.25);
             renderer.setPixelRatio(pixelRatio);
+            post.resize();
+            post.setQuality(false);
           } else if (avg < 0.016 && quality === 0) {
             quality = 1;
+            post.setQuality(true);
           }
           frames = 0; frameAcc = 0;
         }
@@ -174,8 +184,9 @@
 
       // Bruges af udviklings-scriptet til at tage skærmbilleder.
       O.debug = {
+        frames: 0,
         scene: scene, camera: camera, renderer: renderer, player: player,
-        stones: stones, water: water, sky: sky, props: props,
+        stones: stones, water: water, sky: sky, props: props, post: post,
         terrain: terrain, cliffs: cliffs, hud: hud
       };
 

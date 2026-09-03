@@ -175,6 +175,2151 @@
 
 </script>
 <script>
+/* ---- vendor/three-addons/CopyShader.js ---- */
+( function () {
+
+	/**
+ * Full-screen textured quad shader
+ */
+	var CopyShader = {
+		uniforms: {
+			'tDiffuse': {
+				value: null
+			},
+			'opacity': {
+				value: 1.0
+			}
+		},
+		vertexShader:
+  /* glsl */
+  `
+
+		varying vec2 vUv;
+
+		void main() {
+
+			vUv = uv;
+			gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+
+		}`,
+		fragmentShader:
+  /* glsl */
+  `
+
+		uniform float opacity;
+
+		uniform sampler2D tDiffuse;
+
+		varying vec2 vUv;
+
+		void main() {
+
+			vec4 texel = texture2D( tDiffuse, vUv );
+			gl_FragColor = opacity * texel;
+
+		}`
+	};
+
+	THREE.CopyShader = CopyShader;
+
+} )();
+
+</script>
+<script>
+/* ---- vendor/three-addons/LuminosityHighPassShader.js ---- */
+( function () {
+
+	/**
+ * Luminosity
+ * http://en.wikipedia.org/wiki/Luminosity
+ */
+
+	const LuminosityHighPassShader = {
+		shaderID: 'luminosityHighPass',
+		uniforms: {
+			'tDiffuse': {
+				value: null
+			},
+			'luminosityThreshold': {
+				value: 1.0
+			},
+			'smoothWidth': {
+				value: 1.0
+			},
+			'defaultColor': {
+				value: new THREE.Color( 0x000000 )
+			},
+			'defaultOpacity': {
+				value: 0.0
+			}
+		},
+		vertexShader:
+  /* glsl */
+  `
+
+		varying vec2 vUv;
+
+		void main() {
+
+			vUv = uv;
+
+			gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+
+		}`,
+		fragmentShader:
+  /* glsl */
+  `
+
+		uniform sampler2D tDiffuse;
+		uniform vec3 defaultColor;
+		uniform float defaultOpacity;
+		uniform float luminosityThreshold;
+		uniform float smoothWidth;
+
+		varying vec2 vUv;
+
+		void main() {
+
+			vec4 texel = texture2D( tDiffuse, vUv );
+
+			vec3 luma = vec3( 0.299, 0.587, 0.114 );
+
+			float v = dot( texel.xyz, luma );
+
+			vec4 outputColor = vec4( defaultColor.rgb, defaultOpacity );
+
+			float alpha = smoothstep( luminosityThreshold, luminosityThreshold + smoothWidth, v );
+
+			gl_FragColor = mix( outputColor, texel, alpha );
+
+		}`
+	};
+
+	THREE.LuminosityHighPassShader = LuminosityHighPassShader;
+
+} )();
+
+</script>
+<script>
+/* ---- vendor/three-addons/FXAAShader.js ---- */
+( function () {
+
+	/**
+ * NVIDIA FXAA by Timothy Lottes
+ * http://timothylottes.blogspot.com/2011/06/fxaa3-source-released.html
+ * - WebGL port by @supereggbert
+ * http://www.glge.org/demos/fxaa/
+ */
+
+	const FXAAShader = {
+		uniforms: {
+			'tDiffuse': {
+				value: null
+			},
+			'resolution': {
+				value: new THREE.Vector2( 1 / 1024, 1 / 512 )
+			}
+		},
+		vertexShader:
+  /* glsl */
+  `
+
+		varying vec2 vUv;
+
+		void main() {
+
+			vUv = uv;
+			gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+
+		}`,
+		fragmentShader: // FXAA 3.11 implementation by NVIDIA, ported to WebGL by Agost Biro (biro@archilogic.com)
+		//----------------------------------------------------------------------------------
+		// File:				es3-kepler\FXAA\assets\shaders/FXAA_DefaultES.frag
+		// SDK Version: v3.00
+		// Email:			 gameworks@nvidia.com
+		// Site:				http://developer.nvidia.com/
+		//
+		// Copyright (c) 2014-2015, NVIDIA CORPORATION. All rights reserved.
+		//
+		// Redistribution and use in source and binary forms, with or without
+		// modification, are permitted provided that the following conditions
+		// are met:
+		//	* Redistributions of source code must retain the above copyright
+		//		notice, this list of conditions and the following disclaimer.
+		//	* Redistributions in binary form must reproduce the above copyright
+		//		notice, this list of conditions and the following disclaimer in the
+		//		documentation and/or other materials provided with the distribution.
+		//	* Neither the name of NVIDIA CORPORATION nor the names of its
+		//		contributors may be used to endorse or promote products derived
+		//		from this software without specific prior written permission.
+		//
+		// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS\'\' AND ANY
+		// EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+		// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+		// PURPOSE ARE DISCLAIMED.	IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+		// CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+		// EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+		// PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+		// PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+		// OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+		// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+		// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+		//
+		//----------------------------------------------------------------------------------
+
+  /* glsl */
+  `
+
+		precision highp float;
+
+		uniform sampler2D tDiffuse;
+
+		uniform vec2 resolution;
+
+		varying vec2 vUv;
+
+		#define FXAA_PC 1
+		#define FXAA_GLSL_100 1
+		#define FXAA_QUALITY_PRESET 12
+
+		#define FXAA_GREEN_AS_LUMA 1
+
+		/*--------------------------------------------------------------------------*/
+		#ifndef FXAA_PC_CONSOLE
+				//
+				// The console algorithm for PC is included
+				// for developers targeting really low spec machines.
+				// Likely better to just run FXAA_PC, and use a really low preset.
+				//
+				#define FXAA_PC_CONSOLE 0
+		#endif
+		/*--------------------------------------------------------------------------*/
+		#ifndef FXAA_GLSL_120
+				#define FXAA_GLSL_120 0
+		#endif
+		/*--------------------------------------------------------------------------*/
+		#ifndef FXAA_GLSL_130
+				#define FXAA_GLSL_130 0
+		#endif
+		/*--------------------------------------------------------------------------*/
+		#ifndef FXAA_HLSL_3
+				#define FXAA_HLSL_3 0
+		#endif
+		/*--------------------------------------------------------------------------*/
+		#ifndef FXAA_HLSL_4
+				#define FXAA_HLSL_4 0
+		#endif
+		/*--------------------------------------------------------------------------*/
+		#ifndef FXAA_HLSL_5
+				#define FXAA_HLSL_5 0
+		#endif
+		/*==========================================================================*/
+		#ifndef FXAA_GREEN_AS_LUMA
+				//
+				// For those using non-linear color,
+				// and either not able to get luma in alpha, or not wanting to,
+				// this enables FXAA to run using green as a proxy for luma.
+				// So with this enabled, no need to pack luma in alpha.
+				//
+				// This will turn off AA on anything which lacks some amount of green.
+				// Pure red and blue or combination of only R and B, will get no AA.
+				//
+				// Might want to lower the settings for both,
+				//		fxaaConsoleEdgeThresholdMin
+				//		fxaaQualityEdgeThresholdMin
+				// In order to insure AA does not get turned off on colors
+				// which contain a minor amount of green.
+				//
+				// 1 = On.
+				// 0 = Off.
+				//
+				#define FXAA_GREEN_AS_LUMA 0
+		#endif
+		/*--------------------------------------------------------------------------*/
+		#ifndef FXAA_EARLY_EXIT
+				//
+				// Controls algorithm\'s early exit path.
+				// On PS3 turning this ON adds 2 cycles to the shader.
+				// On 360 turning this OFF adds 10ths of a millisecond to the shader.
+				// Turning this off on console will result in a more blurry image.
+				// So this defaults to on.
+				//
+				// 1 = On.
+				// 0 = Off.
+				//
+				#define FXAA_EARLY_EXIT 1
+		#endif
+		/*--------------------------------------------------------------------------*/
+		#ifndef FXAA_DISCARD
+				//
+				// Only valid for PC OpenGL currently.
+				// Probably will not work when FXAA_GREEN_AS_LUMA = 1.
+				//
+				// 1 = Use discard on pixels which don\'t need AA.
+				//		 For APIs which enable concurrent TEX+ROP from same surface.
+				// 0 = Return unchanged color on pixels which don\'t need AA.
+				//
+				#define FXAA_DISCARD 0
+		#endif
+		/*--------------------------------------------------------------------------*/
+		#ifndef FXAA_FAST_PIXEL_OFFSET
+				//
+				// Used for GLSL 120 only.
+				//
+				// 1 = GL API supports fast pixel offsets
+				// 0 = do not use fast pixel offsets
+				//
+				#ifdef GL_EXT_gpu_shader4
+						#define FXAA_FAST_PIXEL_OFFSET 1
+				#endif
+				#ifdef GL_NV_gpu_shader5
+						#define FXAA_FAST_PIXEL_OFFSET 1
+				#endif
+				#ifdef GL_ARB_gpu_shader5
+						#define FXAA_FAST_PIXEL_OFFSET 1
+				#endif
+				#ifndef FXAA_FAST_PIXEL_OFFSET
+						#define FXAA_FAST_PIXEL_OFFSET 0
+				#endif
+		#endif
+		/*--------------------------------------------------------------------------*/
+		#ifndef FXAA_GATHER4_ALPHA
+				//
+				// 1 = API supports gather4 on alpha channel.
+				// 0 = API does not support gather4 on alpha channel.
+				//
+				#if (FXAA_HLSL_5 == 1)
+						#define FXAA_GATHER4_ALPHA 1
+				#endif
+				#ifdef GL_ARB_gpu_shader5
+						#define FXAA_GATHER4_ALPHA 1
+				#endif
+				#ifdef GL_NV_gpu_shader5
+						#define FXAA_GATHER4_ALPHA 1
+				#endif
+				#ifndef FXAA_GATHER4_ALPHA
+						#define FXAA_GATHER4_ALPHA 0
+				#endif
+		#endif
+
+
+		/*============================================================================
+														FXAA QUALITY - TUNING KNOBS
+		------------------------------------------------------------------------------
+		NOTE the other tuning knobs are now in the shader function inputs!
+		============================================================================*/
+		#ifndef FXAA_QUALITY_PRESET
+				//
+				// Choose the quality preset.
+				// This needs to be compiled into the shader as it effects code.
+				// Best option to include multiple presets is to
+				// in each shader define the preset, then include this file.
+				//
+				// OPTIONS
+				// -----------------------------------------------------------------------
+				// 10 to 15 - default medium dither (10=fastest, 15=highest quality)
+				// 20 to 29 - less dither, more expensive (20=fastest, 29=highest quality)
+				// 39			 - no dither, very expensive
+				//
+				// NOTES
+				// -----------------------------------------------------------------------
+				// 12 = slightly faster then FXAA 3.9 and higher edge quality (default)
+				// 13 = about same speed as FXAA 3.9 and better than 12
+				// 23 = closest to FXAA 3.9 visually and performance wise
+				//	_ = the lowest digit is directly related to performance
+				// _	= the highest digit is directly related to style
+				//
+				#define FXAA_QUALITY_PRESET 12
+		#endif
+
+
+		/*============================================================================
+
+															 FXAA QUALITY - PRESETS
+
+		============================================================================*/
+
+		/*============================================================================
+												 FXAA QUALITY - MEDIUM DITHER PRESETS
+		============================================================================*/
+		#if (FXAA_QUALITY_PRESET == 10)
+				#define FXAA_QUALITY_PS 3
+				#define FXAA_QUALITY_P0 1.5
+				#define FXAA_QUALITY_P1 3.0
+				#define FXAA_QUALITY_P2 12.0
+		#endif
+		/*--------------------------------------------------------------------------*/
+		#if (FXAA_QUALITY_PRESET == 11)
+				#define FXAA_QUALITY_PS 4
+				#define FXAA_QUALITY_P0 1.0
+				#define FXAA_QUALITY_P1 1.5
+				#define FXAA_QUALITY_P2 3.0
+				#define FXAA_QUALITY_P3 12.0
+		#endif
+		/*--------------------------------------------------------------------------*/
+		#if (FXAA_QUALITY_PRESET == 12)
+				#define FXAA_QUALITY_PS 5
+				#define FXAA_QUALITY_P0 1.0
+				#define FXAA_QUALITY_P1 1.5
+				#define FXAA_QUALITY_P2 2.0
+				#define FXAA_QUALITY_P3 4.0
+				#define FXAA_QUALITY_P4 12.0
+		#endif
+		/*--------------------------------------------------------------------------*/
+		#if (FXAA_QUALITY_PRESET == 13)
+				#define FXAA_QUALITY_PS 6
+				#define FXAA_QUALITY_P0 1.0
+				#define FXAA_QUALITY_P1 1.5
+				#define FXAA_QUALITY_P2 2.0
+				#define FXAA_QUALITY_P3 2.0
+				#define FXAA_QUALITY_P4 4.0
+				#define FXAA_QUALITY_P5 12.0
+		#endif
+		/*--------------------------------------------------------------------------*/
+		#if (FXAA_QUALITY_PRESET == 14)
+				#define FXAA_QUALITY_PS 7
+				#define FXAA_QUALITY_P0 1.0
+				#define FXAA_QUALITY_P1 1.5
+				#define FXAA_QUALITY_P2 2.0
+				#define FXAA_QUALITY_P3 2.0
+				#define FXAA_QUALITY_P4 2.0
+				#define FXAA_QUALITY_P5 4.0
+				#define FXAA_QUALITY_P6 12.0
+		#endif
+		/*--------------------------------------------------------------------------*/
+		#if (FXAA_QUALITY_PRESET == 15)
+				#define FXAA_QUALITY_PS 8
+				#define FXAA_QUALITY_P0 1.0
+				#define FXAA_QUALITY_P1 1.5
+				#define FXAA_QUALITY_P2 2.0
+				#define FXAA_QUALITY_P3 2.0
+				#define FXAA_QUALITY_P4 2.0
+				#define FXAA_QUALITY_P5 2.0
+				#define FXAA_QUALITY_P6 4.0
+				#define FXAA_QUALITY_P7 12.0
+		#endif
+
+		/*============================================================================
+												 FXAA QUALITY - LOW DITHER PRESETS
+		============================================================================*/
+		#if (FXAA_QUALITY_PRESET == 20)
+				#define FXAA_QUALITY_PS 3
+				#define FXAA_QUALITY_P0 1.5
+				#define FXAA_QUALITY_P1 2.0
+				#define FXAA_QUALITY_P2 8.0
+		#endif
+		/*--------------------------------------------------------------------------*/
+		#if (FXAA_QUALITY_PRESET == 21)
+				#define FXAA_QUALITY_PS 4
+				#define FXAA_QUALITY_P0 1.0
+				#define FXAA_QUALITY_P1 1.5
+				#define FXAA_QUALITY_P2 2.0
+				#define FXAA_QUALITY_P3 8.0
+		#endif
+		/*--------------------------------------------------------------------------*/
+		#if (FXAA_QUALITY_PRESET == 22)
+				#define FXAA_QUALITY_PS 5
+				#define FXAA_QUALITY_P0 1.0
+				#define FXAA_QUALITY_P1 1.5
+				#define FXAA_QUALITY_P2 2.0
+				#define FXAA_QUALITY_P3 2.0
+				#define FXAA_QUALITY_P4 8.0
+		#endif
+		/*--------------------------------------------------------------------------*/
+		#if (FXAA_QUALITY_PRESET == 23)
+				#define FXAA_QUALITY_PS 6
+				#define FXAA_QUALITY_P0 1.0
+				#define FXAA_QUALITY_P1 1.5
+				#define FXAA_QUALITY_P2 2.0
+				#define FXAA_QUALITY_P3 2.0
+				#define FXAA_QUALITY_P4 2.0
+				#define FXAA_QUALITY_P5 8.0
+		#endif
+		/*--------------------------------------------------------------------------*/
+		#if (FXAA_QUALITY_PRESET == 24)
+				#define FXAA_QUALITY_PS 7
+				#define FXAA_QUALITY_P0 1.0
+				#define FXAA_QUALITY_P1 1.5
+				#define FXAA_QUALITY_P2 2.0
+				#define FXAA_QUALITY_P3 2.0
+				#define FXAA_QUALITY_P4 2.0
+				#define FXAA_QUALITY_P5 3.0
+				#define FXAA_QUALITY_P6 8.0
+		#endif
+		/*--------------------------------------------------------------------------*/
+		#if (FXAA_QUALITY_PRESET == 25)
+				#define FXAA_QUALITY_PS 8
+				#define FXAA_QUALITY_P0 1.0
+				#define FXAA_QUALITY_P1 1.5
+				#define FXAA_QUALITY_P2 2.0
+				#define FXAA_QUALITY_P3 2.0
+				#define FXAA_QUALITY_P4 2.0
+				#define FXAA_QUALITY_P5 2.0
+				#define FXAA_QUALITY_P6 4.0
+				#define FXAA_QUALITY_P7 8.0
+		#endif
+		/*--------------------------------------------------------------------------*/
+		#if (FXAA_QUALITY_PRESET == 26)
+				#define FXAA_QUALITY_PS 9
+				#define FXAA_QUALITY_P0 1.0
+				#define FXAA_QUALITY_P1 1.5
+				#define FXAA_QUALITY_P2 2.0
+				#define FXAA_QUALITY_P3 2.0
+				#define FXAA_QUALITY_P4 2.0
+				#define FXAA_QUALITY_P5 2.0
+				#define FXAA_QUALITY_P6 2.0
+				#define FXAA_QUALITY_P7 4.0
+				#define FXAA_QUALITY_P8 8.0
+		#endif
+		/*--------------------------------------------------------------------------*/
+		#if (FXAA_QUALITY_PRESET == 27)
+				#define FXAA_QUALITY_PS 10
+				#define FXAA_QUALITY_P0 1.0
+				#define FXAA_QUALITY_P1 1.5
+				#define FXAA_QUALITY_P2 2.0
+				#define FXAA_QUALITY_P3 2.0
+				#define FXAA_QUALITY_P4 2.0
+				#define FXAA_QUALITY_P5 2.0
+				#define FXAA_QUALITY_P6 2.0
+				#define FXAA_QUALITY_P7 2.0
+				#define FXAA_QUALITY_P8 4.0
+				#define FXAA_QUALITY_P9 8.0
+		#endif
+		/*--------------------------------------------------------------------------*/
+		#if (FXAA_QUALITY_PRESET == 28)
+				#define FXAA_QUALITY_PS 11
+				#define FXAA_QUALITY_P0 1.0
+				#define FXAA_QUALITY_P1 1.5
+				#define FXAA_QUALITY_P2 2.0
+				#define FXAA_QUALITY_P3 2.0
+				#define FXAA_QUALITY_P4 2.0
+				#define FXAA_QUALITY_P5 2.0
+				#define FXAA_QUALITY_P6 2.0
+				#define FXAA_QUALITY_P7 2.0
+				#define FXAA_QUALITY_P8 2.0
+				#define FXAA_QUALITY_P9 4.0
+				#define FXAA_QUALITY_P10 8.0
+		#endif
+		/*--------------------------------------------------------------------------*/
+		#if (FXAA_QUALITY_PRESET == 29)
+				#define FXAA_QUALITY_PS 12
+				#define FXAA_QUALITY_P0 1.0
+				#define FXAA_QUALITY_P1 1.5
+				#define FXAA_QUALITY_P2 2.0
+				#define FXAA_QUALITY_P3 2.0
+				#define FXAA_QUALITY_P4 2.0
+				#define FXAA_QUALITY_P5 2.0
+				#define FXAA_QUALITY_P6 2.0
+				#define FXAA_QUALITY_P7 2.0
+				#define FXAA_QUALITY_P8 2.0
+				#define FXAA_QUALITY_P9 2.0
+				#define FXAA_QUALITY_P10 4.0
+				#define FXAA_QUALITY_P11 8.0
+		#endif
+
+		/*============================================================================
+												 FXAA QUALITY - EXTREME QUALITY
+		============================================================================*/
+		#if (FXAA_QUALITY_PRESET == 39)
+				#define FXAA_QUALITY_PS 12
+				#define FXAA_QUALITY_P0 1.0
+				#define FXAA_QUALITY_P1 1.0
+				#define FXAA_QUALITY_P2 1.0
+				#define FXAA_QUALITY_P3 1.0
+				#define FXAA_QUALITY_P4 1.0
+				#define FXAA_QUALITY_P5 1.5
+				#define FXAA_QUALITY_P6 2.0
+				#define FXAA_QUALITY_P7 2.0
+				#define FXAA_QUALITY_P8 2.0
+				#define FXAA_QUALITY_P9 2.0
+				#define FXAA_QUALITY_P10 4.0
+				#define FXAA_QUALITY_P11 8.0
+		#endif
+
+
+
+		/*============================================================================
+
+																		API PORTING
+
+		============================================================================*/
+		#if (FXAA_GLSL_100 == 1) || (FXAA_GLSL_120 == 1) || (FXAA_GLSL_130 == 1)
+				#define FxaaBool bool
+				#define FxaaDiscard discard
+				#define FxaaFloat float
+				#define FxaaFloat2 vec2
+				#define FxaaFloat3 vec3
+				#define FxaaFloat4 vec4
+				#define FxaaHalf float
+				#define FxaaHalf2 vec2
+				#define FxaaHalf3 vec3
+				#define FxaaHalf4 vec4
+				#define FxaaInt2 ivec2
+				#define FxaaSat(x) clamp(x, 0.0, 1.0)
+				#define FxaaTex sampler2D
+		#else
+				#define FxaaBool bool
+				#define FxaaDiscard clip(-1)
+				#define FxaaFloat float
+				#define FxaaFloat2 float2
+				#define FxaaFloat3 float3
+				#define FxaaFloat4 float4
+				#define FxaaHalf half
+				#define FxaaHalf2 half2
+				#define FxaaHalf3 half3
+				#define FxaaHalf4 half4
+				#define FxaaSat(x) saturate(x)
+		#endif
+		/*--------------------------------------------------------------------------*/
+		#if (FXAA_GLSL_100 == 1)
+			#define FxaaTexTop(t, p) texture2D(t, p, 0.0)
+			#define FxaaTexOff(t, p, o, r) texture2D(t, p + (o * r), 0.0)
+		#endif
+		/*--------------------------------------------------------------------------*/
+		#if (FXAA_GLSL_120 == 1)
+				// Requires,
+				//	#version 120
+				// And at least,
+				//	#extension GL_EXT_gpu_shader4 : enable
+				//	(or set FXAA_FAST_PIXEL_OFFSET 1 to work like DX9)
+				#define FxaaTexTop(t, p) texture2DLod(t, p, 0.0)
+				#if (FXAA_FAST_PIXEL_OFFSET == 1)
+						#define FxaaTexOff(t, p, o, r) texture2DLodOffset(t, p, 0.0, o)
+				#else
+						#define FxaaTexOff(t, p, o, r) texture2DLod(t, p + (o * r), 0.0)
+				#endif
+				#if (FXAA_GATHER4_ALPHA == 1)
+						// use #extension GL_ARB_gpu_shader5 : enable
+						#define FxaaTexAlpha4(t, p) textureGather(t, p, 3)
+						#define FxaaTexOffAlpha4(t, p, o) textureGatherOffset(t, p, o, 3)
+						#define FxaaTexGreen4(t, p) textureGather(t, p, 1)
+						#define FxaaTexOffGreen4(t, p, o) textureGatherOffset(t, p, o, 1)
+				#endif
+		#endif
+		/*--------------------------------------------------------------------------*/
+		#if (FXAA_GLSL_130 == 1)
+				// Requires "#version 130" or better
+				#define FxaaTexTop(t, p) textureLod(t, p, 0.0)
+				#define FxaaTexOff(t, p, o, r) textureLodOffset(t, p, 0.0, o)
+				#if (FXAA_GATHER4_ALPHA == 1)
+						// use #extension GL_ARB_gpu_shader5 : enable
+						#define FxaaTexAlpha4(t, p) textureGather(t, p, 3)
+						#define FxaaTexOffAlpha4(t, p, o) textureGatherOffset(t, p, o, 3)
+						#define FxaaTexGreen4(t, p) textureGather(t, p, 1)
+						#define FxaaTexOffGreen4(t, p, o) textureGatherOffset(t, p, o, 1)
+				#endif
+		#endif
+		/*--------------------------------------------------------------------------*/
+		#if (FXAA_HLSL_3 == 1)
+				#define FxaaInt2 float2
+				#define FxaaTex sampler2D
+				#define FxaaTexTop(t, p) tex2Dlod(t, float4(p, 0.0, 0.0))
+				#define FxaaTexOff(t, p, o, r) tex2Dlod(t, float4(p + (o * r), 0, 0))
+		#endif
+		/*--------------------------------------------------------------------------*/
+		#if (FXAA_HLSL_4 == 1)
+				#define FxaaInt2 int2
+				struct FxaaTex { SamplerState smpl; Texture2D tex; };
+				#define FxaaTexTop(t, p) t.tex.SampleLevel(t.smpl, p, 0.0)
+				#define FxaaTexOff(t, p, o, r) t.tex.SampleLevel(t.smpl, p, 0.0, o)
+		#endif
+		/*--------------------------------------------------------------------------*/
+		#if (FXAA_HLSL_5 == 1)
+				#define FxaaInt2 int2
+				struct FxaaTex { SamplerState smpl; Texture2D tex; };
+				#define FxaaTexTop(t, p) t.tex.SampleLevel(t.smpl, p, 0.0)
+				#define FxaaTexOff(t, p, o, r) t.tex.SampleLevel(t.smpl, p, 0.0, o)
+				#define FxaaTexAlpha4(t, p) t.tex.GatherAlpha(t.smpl, p)
+				#define FxaaTexOffAlpha4(t, p, o) t.tex.GatherAlpha(t.smpl, p, o)
+				#define FxaaTexGreen4(t, p) t.tex.GatherGreen(t.smpl, p)
+				#define FxaaTexOffGreen4(t, p, o) t.tex.GatherGreen(t.smpl, p, o)
+		#endif
+
+
+		/*============================================================================
+											 GREEN AS LUMA OPTION SUPPORT FUNCTION
+		============================================================================*/
+		#if (FXAA_GREEN_AS_LUMA == 0)
+				FxaaFloat FxaaLuma(FxaaFloat4 rgba) { return rgba.w; }
+		#else
+				FxaaFloat FxaaLuma(FxaaFloat4 rgba) { return rgba.y; }
+		#endif
+
+
+
+
+		/*============================================================================
+
+																 FXAA3 QUALITY - PC
+
+		============================================================================*/
+		#if (FXAA_PC == 1)
+		/*--------------------------------------------------------------------------*/
+		FxaaFloat4 FxaaPixelShader(
+				//
+				// Use noperspective interpolation here (turn off perspective interpolation).
+				// {xy} = center of pixel
+				FxaaFloat2 pos,
+				//
+				// Used only for FXAA Console, and not used on the 360 version.
+				// Use noperspective interpolation here (turn off perspective interpolation).
+				// {xy_} = upper left of pixel
+				// {_zw} = lower right of pixel
+				FxaaFloat4 fxaaConsolePosPos,
+				//
+				// Input color texture.
+				// {rgb_} = color in linear or perceptual color space
+				// if (FXAA_GREEN_AS_LUMA == 0)
+				//		 {__a} = luma in perceptual color space (not linear)
+				FxaaTex tex,
+				//
+				// Only used on the optimized 360 version of FXAA Console.
+				// For everything but 360, just use the same input here as for "tex".
+				// For 360, same texture, just alias with a 2nd sampler.
+				// This sampler needs to have an exponent bias of -1.
+				FxaaTex fxaaConsole360TexExpBiasNegOne,
+				//
+				// Only used on the optimized 360 version of FXAA Console.
+				// For everything but 360, just use the same input here as for "tex".
+				// For 360, same texture, just alias with a 3nd sampler.
+				// This sampler needs to have an exponent bias of -2.
+				FxaaTex fxaaConsole360TexExpBiasNegTwo,
+				//
+				// Only used on FXAA Quality.
+				// This must be from a constant/uniform.
+				// {x_} = 1.0/screenWidthInPixels
+				// {_y} = 1.0/screenHeightInPixels
+				FxaaFloat2 fxaaQualityRcpFrame,
+				//
+				// Only used on FXAA Console.
+				// This must be from a constant/uniform.
+				// This effects sub-pixel AA quality and inversely sharpness.
+				//	 Where N ranges between,
+				//		 N = 0.50 (default)
+				//		 N = 0.33 (sharper)
+				// {x__} = -N/screenWidthInPixels
+				// {_y_} = -N/screenHeightInPixels
+				// {_z_} =	N/screenWidthInPixels
+				// {__w} =	N/screenHeightInPixels
+				FxaaFloat4 fxaaConsoleRcpFrameOpt,
+				//
+				// Only used on FXAA Console.
+				// Not used on 360, but used on PS3 and PC.
+				// This must be from a constant/uniform.
+				// {x__} = -2.0/screenWidthInPixels
+				// {_y_} = -2.0/screenHeightInPixels
+				// {_z_} =	2.0/screenWidthInPixels
+				// {__w} =	2.0/screenHeightInPixels
+				FxaaFloat4 fxaaConsoleRcpFrameOpt2,
+				//
+				// Only used on FXAA Console.
+				// Only used on 360 in place of fxaaConsoleRcpFrameOpt2.
+				// This must be from a constant/uniform.
+				// {x__} =	8.0/screenWidthInPixels
+				// {_y_} =	8.0/screenHeightInPixels
+				// {_z_} = -4.0/screenWidthInPixels
+				// {__w} = -4.0/screenHeightInPixels
+				FxaaFloat4 fxaaConsole360RcpFrameOpt2,
+				//
+				// Only used on FXAA Quality.
+				// This used to be the FXAA_QUALITY_SUBPIX define.
+				// It is here now to allow easier tuning.
+				// Choose the amount of sub-pixel aliasing removal.
+				// This can effect sharpness.
+				//	 1.00 - upper limit (softer)
+				//	 0.75 - default amount of filtering
+				//	 0.50 - lower limit (sharper, less sub-pixel aliasing removal)
+				//	 0.25 - almost off
+				//	 0.00 - completely off
+				FxaaFloat fxaaQualitySubpix,
+				//
+				// Only used on FXAA Quality.
+				// This used to be the FXAA_QUALITY_EDGE_THRESHOLD define.
+				// It is here now to allow easier tuning.
+				// The minimum amount of local contrast required to apply algorithm.
+				//	 0.333 - too little (faster)
+				//	 0.250 - low quality
+				//	 0.166 - default
+				//	 0.125 - high quality
+				//	 0.063 - overkill (slower)
+				FxaaFloat fxaaQualityEdgeThreshold,
+				//
+				// Only used on FXAA Quality.
+				// This used to be the FXAA_QUALITY_EDGE_THRESHOLD_MIN define.
+				// It is here now to allow easier tuning.
+				// Trims the algorithm from processing darks.
+				//	 0.0833 - upper limit (default, the start of visible unfiltered edges)
+				//	 0.0625 - high quality (faster)
+				//	 0.0312 - visible limit (slower)
+				// Special notes when using FXAA_GREEN_AS_LUMA,
+				//	 Likely want to set this to zero.
+				//	 As colors that are mostly not-green
+				//	 will appear very dark in the green channel!
+				//	 Tune by looking at mostly non-green content,
+				//	 then start at zero and increase until aliasing is a problem.
+				FxaaFloat fxaaQualityEdgeThresholdMin,
+				//
+				// Only used on FXAA Console.
+				// This used to be the FXAA_CONSOLE_EDGE_SHARPNESS define.
+				// It is here now to allow easier tuning.
+				// This does not effect PS3, as this needs to be compiled in.
+				//	 Use FXAA_CONSOLE_PS3_EDGE_SHARPNESS for PS3.
+				//	 Due to the PS3 being ALU bound,
+				//	 there are only three safe values here: 2 and 4 and 8.
+				//	 These options use the shaders ability to a free *|/ by 2|4|8.
+				// For all other platforms can be a non-power of two.
+				//	 8.0 is sharper (default!!!)
+				//	 4.0 is softer
+				//	 2.0 is really soft (good only for vector graphics inputs)
+				FxaaFloat fxaaConsoleEdgeSharpness,
+				//
+				// Only used on FXAA Console.
+				// This used to be the FXAA_CONSOLE_EDGE_THRESHOLD define.
+				// It is here now to allow easier tuning.
+				// This does not effect PS3, as this needs to be compiled in.
+				//	 Use FXAA_CONSOLE_PS3_EDGE_THRESHOLD for PS3.
+				//	 Due to the PS3 being ALU bound,
+				//	 there are only two safe values here: 1/4 and 1/8.
+				//	 These options use the shaders ability to a free *|/ by 2|4|8.
+				// The console setting has a different mapping than the quality setting.
+				// Other platforms can use other values.
+				//	 0.125 leaves less aliasing, but is softer (default!!!)
+				//	 0.25 leaves more aliasing, and is sharper
+				FxaaFloat fxaaConsoleEdgeThreshold,
+				//
+				// Only used on FXAA Console.
+				// This used to be the FXAA_CONSOLE_EDGE_THRESHOLD_MIN define.
+				// It is here now to allow easier tuning.
+				// Trims the algorithm from processing darks.
+				// The console setting has a different mapping than the quality setting.
+				// This only applies when FXAA_EARLY_EXIT is 1.
+				// This does not apply to PS3,
+				// PS3 was simplified to avoid more shader instructions.
+				//	 0.06 - faster but more aliasing in darks
+				//	 0.05 - default
+				//	 0.04 - slower and less aliasing in darks
+				// Special notes when using FXAA_GREEN_AS_LUMA,
+				//	 Likely want to set this to zero.
+				//	 As colors that are mostly not-green
+				//	 will appear very dark in the green channel!
+				//	 Tune by looking at mostly non-green content,
+				//	 then start at zero and increase until aliasing is a problem.
+				FxaaFloat fxaaConsoleEdgeThresholdMin,
+				//
+				// Extra constants for 360 FXAA Console only.
+				// Use zeros or anything else for other platforms.
+				// These must be in physical constant registers and NOT immediates.
+				// Immediates will result in compiler un-optimizing.
+				// {xyzw} = float4(1.0, -1.0, 0.25, -0.25)
+				FxaaFloat4 fxaaConsole360ConstDir
+		) {
+		/*--------------------------------------------------------------------------*/
+				FxaaFloat2 posM;
+				posM.x = pos.x;
+				posM.y = pos.y;
+				#if (FXAA_GATHER4_ALPHA == 1)
+						#if (FXAA_DISCARD == 0)
+								FxaaFloat4 rgbyM = FxaaTexTop(tex, posM);
+								#if (FXAA_GREEN_AS_LUMA == 0)
+										#define lumaM rgbyM.w
+								#else
+										#define lumaM rgbyM.y
+								#endif
+						#endif
+						#if (FXAA_GREEN_AS_LUMA == 0)
+								FxaaFloat4 luma4A = FxaaTexAlpha4(tex, posM);
+								FxaaFloat4 luma4B = FxaaTexOffAlpha4(tex, posM, FxaaInt2(-1, -1));
+						#else
+								FxaaFloat4 luma4A = FxaaTexGreen4(tex, posM);
+								FxaaFloat4 luma4B = FxaaTexOffGreen4(tex, posM, FxaaInt2(-1, -1));
+						#endif
+						#if (FXAA_DISCARD == 1)
+								#define lumaM luma4A.w
+						#endif
+						#define lumaE luma4A.z
+						#define lumaS luma4A.x
+						#define lumaSE luma4A.y
+						#define lumaNW luma4B.w
+						#define lumaN luma4B.z
+						#define lumaW luma4B.x
+				#else
+						FxaaFloat4 rgbyM = FxaaTexTop(tex, posM);
+						#if (FXAA_GREEN_AS_LUMA == 0)
+								#define lumaM rgbyM.w
+						#else
+								#define lumaM rgbyM.y
+						#endif
+						#if (FXAA_GLSL_100 == 1)
+							FxaaFloat lumaS = FxaaLuma(FxaaTexOff(tex, posM, FxaaFloat2( 0.0, 1.0), fxaaQualityRcpFrame.xy));
+							FxaaFloat lumaE = FxaaLuma(FxaaTexOff(tex, posM, FxaaFloat2( 1.0, 0.0), fxaaQualityRcpFrame.xy));
+							FxaaFloat lumaN = FxaaLuma(FxaaTexOff(tex, posM, FxaaFloat2( 0.0,-1.0), fxaaQualityRcpFrame.xy));
+							FxaaFloat lumaW = FxaaLuma(FxaaTexOff(tex, posM, FxaaFloat2(-1.0, 0.0), fxaaQualityRcpFrame.xy));
+						#else
+							FxaaFloat lumaS = FxaaLuma(FxaaTexOff(tex, posM, FxaaInt2( 0, 1), fxaaQualityRcpFrame.xy));
+							FxaaFloat lumaE = FxaaLuma(FxaaTexOff(tex, posM, FxaaInt2( 1, 0), fxaaQualityRcpFrame.xy));
+							FxaaFloat lumaN = FxaaLuma(FxaaTexOff(tex, posM, FxaaInt2( 0,-1), fxaaQualityRcpFrame.xy));
+							FxaaFloat lumaW = FxaaLuma(FxaaTexOff(tex, posM, FxaaInt2(-1, 0), fxaaQualityRcpFrame.xy));
+						#endif
+				#endif
+		/*--------------------------------------------------------------------------*/
+				FxaaFloat maxSM = max(lumaS, lumaM);
+				FxaaFloat minSM = min(lumaS, lumaM);
+				FxaaFloat maxESM = max(lumaE, maxSM);
+				FxaaFloat minESM = min(lumaE, minSM);
+				FxaaFloat maxWN = max(lumaN, lumaW);
+				FxaaFloat minWN = min(lumaN, lumaW);
+				FxaaFloat rangeMax = max(maxWN, maxESM);
+				FxaaFloat rangeMin = min(minWN, minESM);
+				FxaaFloat rangeMaxScaled = rangeMax * fxaaQualityEdgeThreshold;
+				FxaaFloat range = rangeMax - rangeMin;
+				FxaaFloat rangeMaxClamped = max(fxaaQualityEdgeThresholdMin, rangeMaxScaled);
+				FxaaBool earlyExit = range < rangeMaxClamped;
+		/*--------------------------------------------------------------------------*/
+				if(earlyExit)
+						#if (FXAA_DISCARD == 1)
+								FxaaDiscard;
+						#else
+								return rgbyM;
+						#endif
+		/*--------------------------------------------------------------------------*/
+				#if (FXAA_GATHER4_ALPHA == 0)
+						#if (FXAA_GLSL_100 == 1)
+							FxaaFloat lumaNW = FxaaLuma(FxaaTexOff(tex, posM, FxaaFloat2(-1.0,-1.0), fxaaQualityRcpFrame.xy));
+							FxaaFloat lumaSE = FxaaLuma(FxaaTexOff(tex, posM, FxaaFloat2( 1.0, 1.0), fxaaQualityRcpFrame.xy));
+							FxaaFloat lumaNE = FxaaLuma(FxaaTexOff(tex, posM, FxaaFloat2( 1.0,-1.0), fxaaQualityRcpFrame.xy));
+							FxaaFloat lumaSW = FxaaLuma(FxaaTexOff(tex, posM, FxaaFloat2(-1.0, 1.0), fxaaQualityRcpFrame.xy));
+						#else
+							FxaaFloat lumaNW = FxaaLuma(FxaaTexOff(tex, posM, FxaaInt2(-1,-1), fxaaQualityRcpFrame.xy));
+							FxaaFloat lumaSE = FxaaLuma(FxaaTexOff(tex, posM, FxaaInt2( 1, 1), fxaaQualityRcpFrame.xy));
+							FxaaFloat lumaNE = FxaaLuma(FxaaTexOff(tex, posM, FxaaInt2( 1,-1), fxaaQualityRcpFrame.xy));
+							FxaaFloat lumaSW = FxaaLuma(FxaaTexOff(tex, posM, FxaaInt2(-1, 1), fxaaQualityRcpFrame.xy));
+						#endif
+				#else
+						FxaaFloat lumaNE = FxaaLuma(FxaaTexOff(tex, posM, FxaaInt2(1, -1), fxaaQualityRcpFrame.xy));
+						FxaaFloat lumaSW = FxaaLuma(FxaaTexOff(tex, posM, FxaaInt2(-1, 1), fxaaQualityRcpFrame.xy));
+				#endif
+		/*--------------------------------------------------------------------------*/
+				FxaaFloat lumaNS = lumaN + lumaS;
+				FxaaFloat lumaWE = lumaW + lumaE;
+				FxaaFloat subpixRcpRange = 1.0/range;
+				FxaaFloat subpixNSWE = lumaNS + lumaWE;
+				FxaaFloat edgeHorz1 = (-2.0 * lumaM) + lumaNS;
+				FxaaFloat edgeVert1 = (-2.0 * lumaM) + lumaWE;
+		/*--------------------------------------------------------------------------*/
+				FxaaFloat lumaNESE = lumaNE + lumaSE;
+				FxaaFloat lumaNWNE = lumaNW + lumaNE;
+				FxaaFloat edgeHorz2 = (-2.0 * lumaE) + lumaNESE;
+				FxaaFloat edgeVert2 = (-2.0 * lumaN) + lumaNWNE;
+		/*--------------------------------------------------------------------------*/
+				FxaaFloat lumaNWSW = lumaNW + lumaSW;
+				FxaaFloat lumaSWSE = lumaSW + lumaSE;
+				FxaaFloat edgeHorz4 = (abs(edgeHorz1) * 2.0) + abs(edgeHorz2);
+				FxaaFloat edgeVert4 = (abs(edgeVert1) * 2.0) + abs(edgeVert2);
+				FxaaFloat edgeHorz3 = (-2.0 * lumaW) + lumaNWSW;
+				FxaaFloat edgeVert3 = (-2.0 * lumaS) + lumaSWSE;
+				FxaaFloat edgeHorz = abs(edgeHorz3) + edgeHorz4;
+				FxaaFloat edgeVert = abs(edgeVert3) + edgeVert4;
+		/*--------------------------------------------------------------------------*/
+				FxaaFloat subpixNWSWNESE = lumaNWSW + lumaNESE;
+				FxaaFloat lengthSign = fxaaQualityRcpFrame.x;
+				FxaaBool horzSpan = edgeHorz >= edgeVert;
+				FxaaFloat subpixA = subpixNSWE * 2.0 + subpixNWSWNESE;
+		/*--------------------------------------------------------------------------*/
+				if(!horzSpan) lumaN = lumaW;
+				if(!horzSpan) lumaS = lumaE;
+				if(horzSpan) lengthSign = fxaaQualityRcpFrame.y;
+				FxaaFloat subpixB = (subpixA * (1.0/12.0)) - lumaM;
+		/*--------------------------------------------------------------------------*/
+				FxaaFloat gradientN = lumaN - lumaM;
+				FxaaFloat gradientS = lumaS - lumaM;
+				FxaaFloat lumaNN = lumaN + lumaM;
+				FxaaFloat lumaSS = lumaS + lumaM;
+				FxaaBool pairN = abs(gradientN) >= abs(gradientS);
+				FxaaFloat gradient = max(abs(gradientN), abs(gradientS));
+				if(pairN) lengthSign = -lengthSign;
+				FxaaFloat subpixC = FxaaSat(abs(subpixB) * subpixRcpRange);
+		/*--------------------------------------------------------------------------*/
+				FxaaFloat2 posB;
+				posB.x = posM.x;
+				posB.y = posM.y;
+				FxaaFloat2 offNP;
+				offNP.x = (!horzSpan) ? 0.0 : fxaaQualityRcpFrame.x;
+				offNP.y = ( horzSpan) ? 0.0 : fxaaQualityRcpFrame.y;
+				if(!horzSpan) posB.x += lengthSign * 0.5;
+				if( horzSpan) posB.y += lengthSign * 0.5;
+		/*--------------------------------------------------------------------------*/
+				FxaaFloat2 posN;
+				posN.x = posB.x - offNP.x * FXAA_QUALITY_P0;
+				posN.y = posB.y - offNP.y * FXAA_QUALITY_P0;
+				FxaaFloat2 posP;
+				posP.x = posB.x + offNP.x * FXAA_QUALITY_P0;
+				posP.y = posB.y + offNP.y * FXAA_QUALITY_P0;
+				FxaaFloat subpixD = ((-2.0)*subpixC) + 3.0;
+				FxaaFloat lumaEndN = FxaaLuma(FxaaTexTop(tex, posN));
+				FxaaFloat subpixE = subpixC * subpixC;
+				FxaaFloat lumaEndP = FxaaLuma(FxaaTexTop(tex, posP));
+		/*--------------------------------------------------------------------------*/
+				if(!pairN) lumaNN = lumaSS;
+				FxaaFloat gradientScaled = gradient * 1.0/4.0;
+				FxaaFloat lumaMM = lumaM - lumaNN * 0.5;
+				FxaaFloat subpixF = subpixD * subpixE;
+				FxaaBool lumaMLTZero = lumaMM < 0.0;
+		/*--------------------------------------------------------------------------*/
+				lumaEndN -= lumaNN * 0.5;
+				lumaEndP -= lumaNN * 0.5;
+				FxaaBool doneN = abs(lumaEndN) >= gradientScaled;
+				FxaaBool doneP = abs(lumaEndP) >= gradientScaled;
+				if(!doneN) posN.x -= offNP.x * FXAA_QUALITY_P1;
+				if(!doneN) posN.y -= offNP.y * FXAA_QUALITY_P1;
+				FxaaBool doneNP = (!doneN) || (!doneP);
+				if(!doneP) posP.x += offNP.x * FXAA_QUALITY_P1;
+				if(!doneP) posP.y += offNP.y * FXAA_QUALITY_P1;
+		/*--------------------------------------------------------------------------*/
+				if(doneNP) {
+						if(!doneN) lumaEndN = FxaaLuma(FxaaTexTop(tex, posN.xy));
+						if(!doneP) lumaEndP = FxaaLuma(FxaaTexTop(tex, posP.xy));
+						if(!doneN) lumaEndN = lumaEndN - lumaNN * 0.5;
+						if(!doneP) lumaEndP = lumaEndP - lumaNN * 0.5;
+						doneN = abs(lumaEndN) >= gradientScaled;
+						doneP = abs(lumaEndP) >= gradientScaled;
+						if(!doneN) posN.x -= offNP.x * FXAA_QUALITY_P2;
+						if(!doneN) posN.y -= offNP.y * FXAA_QUALITY_P2;
+						doneNP = (!doneN) || (!doneP);
+						if(!doneP) posP.x += offNP.x * FXAA_QUALITY_P2;
+						if(!doneP) posP.y += offNP.y * FXAA_QUALITY_P2;
+		/*--------------------------------------------------------------------------*/
+						#if (FXAA_QUALITY_PS > 3)
+						if(doneNP) {
+								if(!doneN) lumaEndN = FxaaLuma(FxaaTexTop(tex, posN.xy));
+								if(!doneP) lumaEndP = FxaaLuma(FxaaTexTop(tex, posP.xy));
+								if(!doneN) lumaEndN = lumaEndN - lumaNN * 0.5;
+								if(!doneP) lumaEndP = lumaEndP - lumaNN * 0.5;
+								doneN = abs(lumaEndN) >= gradientScaled;
+								doneP = abs(lumaEndP) >= gradientScaled;
+								if(!doneN) posN.x -= offNP.x * FXAA_QUALITY_P3;
+								if(!doneN) posN.y -= offNP.y * FXAA_QUALITY_P3;
+								doneNP = (!doneN) || (!doneP);
+								if(!doneP) posP.x += offNP.x * FXAA_QUALITY_P3;
+								if(!doneP) posP.y += offNP.y * FXAA_QUALITY_P3;
+		/*--------------------------------------------------------------------------*/
+								#if (FXAA_QUALITY_PS > 4)
+								if(doneNP) {
+										if(!doneN) lumaEndN = FxaaLuma(FxaaTexTop(tex, posN.xy));
+										if(!doneP) lumaEndP = FxaaLuma(FxaaTexTop(tex, posP.xy));
+										if(!doneN) lumaEndN = lumaEndN - lumaNN * 0.5;
+										if(!doneP) lumaEndP = lumaEndP - lumaNN * 0.5;
+										doneN = abs(lumaEndN) >= gradientScaled;
+										doneP = abs(lumaEndP) >= gradientScaled;
+										if(!doneN) posN.x -= offNP.x * FXAA_QUALITY_P4;
+										if(!doneN) posN.y -= offNP.y * FXAA_QUALITY_P4;
+										doneNP = (!doneN) || (!doneP);
+										if(!doneP) posP.x += offNP.x * FXAA_QUALITY_P4;
+										if(!doneP) posP.y += offNP.y * FXAA_QUALITY_P4;
+		/*--------------------------------------------------------------------------*/
+										#if (FXAA_QUALITY_PS > 5)
+										if(doneNP) {
+												if(!doneN) lumaEndN = FxaaLuma(FxaaTexTop(tex, posN.xy));
+												if(!doneP) lumaEndP = FxaaLuma(FxaaTexTop(tex, posP.xy));
+												if(!doneN) lumaEndN = lumaEndN - lumaNN * 0.5;
+												if(!doneP) lumaEndP = lumaEndP - lumaNN * 0.5;
+												doneN = abs(lumaEndN) >= gradientScaled;
+												doneP = abs(lumaEndP) >= gradientScaled;
+												if(!doneN) posN.x -= offNP.x * FXAA_QUALITY_P5;
+												if(!doneN) posN.y -= offNP.y * FXAA_QUALITY_P5;
+												doneNP = (!doneN) || (!doneP);
+												if(!doneP) posP.x += offNP.x * FXAA_QUALITY_P5;
+												if(!doneP) posP.y += offNP.y * FXAA_QUALITY_P5;
+		/*--------------------------------------------------------------------------*/
+												#if (FXAA_QUALITY_PS > 6)
+												if(doneNP) {
+														if(!doneN) lumaEndN = FxaaLuma(FxaaTexTop(tex, posN.xy));
+														if(!doneP) lumaEndP = FxaaLuma(FxaaTexTop(tex, posP.xy));
+														if(!doneN) lumaEndN = lumaEndN - lumaNN * 0.5;
+														if(!doneP) lumaEndP = lumaEndP - lumaNN * 0.5;
+														doneN = abs(lumaEndN) >= gradientScaled;
+														doneP = abs(lumaEndP) >= gradientScaled;
+														if(!doneN) posN.x -= offNP.x * FXAA_QUALITY_P6;
+														if(!doneN) posN.y -= offNP.y * FXAA_QUALITY_P6;
+														doneNP = (!doneN) || (!doneP);
+														if(!doneP) posP.x += offNP.x * FXAA_QUALITY_P6;
+														if(!doneP) posP.y += offNP.y * FXAA_QUALITY_P6;
+		/*--------------------------------------------------------------------------*/
+														#if (FXAA_QUALITY_PS > 7)
+														if(doneNP) {
+																if(!doneN) lumaEndN = FxaaLuma(FxaaTexTop(tex, posN.xy));
+																if(!doneP) lumaEndP = FxaaLuma(FxaaTexTop(tex, posP.xy));
+																if(!doneN) lumaEndN = lumaEndN - lumaNN * 0.5;
+																if(!doneP) lumaEndP = lumaEndP - lumaNN * 0.5;
+																doneN = abs(lumaEndN) >= gradientScaled;
+																doneP = abs(lumaEndP) >= gradientScaled;
+																if(!doneN) posN.x -= offNP.x * FXAA_QUALITY_P7;
+																if(!doneN) posN.y -= offNP.y * FXAA_QUALITY_P7;
+																doneNP = (!doneN) || (!doneP);
+																if(!doneP) posP.x += offNP.x * FXAA_QUALITY_P7;
+																if(!doneP) posP.y += offNP.y * FXAA_QUALITY_P7;
+		/*--------------------------------------------------------------------------*/
+				#if (FXAA_QUALITY_PS > 8)
+				if(doneNP) {
+						if(!doneN) lumaEndN = FxaaLuma(FxaaTexTop(tex, posN.xy));
+						if(!doneP) lumaEndP = FxaaLuma(FxaaTexTop(tex, posP.xy));
+						if(!doneN) lumaEndN = lumaEndN - lumaNN * 0.5;
+						if(!doneP) lumaEndP = lumaEndP - lumaNN * 0.5;
+						doneN = abs(lumaEndN) >= gradientScaled;
+						doneP = abs(lumaEndP) >= gradientScaled;
+						if(!doneN) posN.x -= offNP.x * FXAA_QUALITY_P8;
+						if(!doneN) posN.y -= offNP.y * FXAA_QUALITY_P8;
+						doneNP = (!doneN) || (!doneP);
+						if(!doneP) posP.x += offNP.x * FXAA_QUALITY_P8;
+						if(!doneP) posP.y += offNP.y * FXAA_QUALITY_P8;
+		/*--------------------------------------------------------------------------*/
+						#if (FXAA_QUALITY_PS > 9)
+						if(doneNP) {
+								if(!doneN) lumaEndN = FxaaLuma(FxaaTexTop(tex, posN.xy));
+								if(!doneP) lumaEndP = FxaaLuma(FxaaTexTop(tex, posP.xy));
+								if(!doneN) lumaEndN = lumaEndN - lumaNN * 0.5;
+								if(!doneP) lumaEndP = lumaEndP - lumaNN * 0.5;
+								doneN = abs(lumaEndN) >= gradientScaled;
+								doneP = abs(lumaEndP) >= gradientScaled;
+								if(!doneN) posN.x -= offNP.x * FXAA_QUALITY_P9;
+								if(!doneN) posN.y -= offNP.y * FXAA_QUALITY_P9;
+								doneNP = (!doneN) || (!doneP);
+								if(!doneP) posP.x += offNP.x * FXAA_QUALITY_P9;
+								if(!doneP) posP.y += offNP.y * FXAA_QUALITY_P9;
+		/*--------------------------------------------------------------------------*/
+								#if (FXAA_QUALITY_PS > 10)
+								if(doneNP) {
+										if(!doneN) lumaEndN = FxaaLuma(FxaaTexTop(tex, posN.xy));
+										if(!doneP) lumaEndP = FxaaLuma(FxaaTexTop(tex, posP.xy));
+										if(!doneN) lumaEndN = lumaEndN - lumaNN * 0.5;
+										if(!doneP) lumaEndP = lumaEndP - lumaNN * 0.5;
+										doneN = abs(lumaEndN) >= gradientScaled;
+										doneP = abs(lumaEndP) >= gradientScaled;
+										if(!doneN) posN.x -= offNP.x * FXAA_QUALITY_P10;
+										if(!doneN) posN.y -= offNP.y * FXAA_QUALITY_P10;
+										doneNP = (!doneN) || (!doneP);
+										if(!doneP) posP.x += offNP.x * FXAA_QUALITY_P10;
+										if(!doneP) posP.y += offNP.y * FXAA_QUALITY_P10;
+		/*--------------------------------------------------------------------------*/
+										#if (FXAA_QUALITY_PS > 11)
+										if(doneNP) {
+												if(!doneN) lumaEndN = FxaaLuma(FxaaTexTop(tex, posN.xy));
+												if(!doneP) lumaEndP = FxaaLuma(FxaaTexTop(tex, posP.xy));
+												if(!doneN) lumaEndN = lumaEndN - lumaNN * 0.5;
+												if(!doneP) lumaEndP = lumaEndP - lumaNN * 0.5;
+												doneN = abs(lumaEndN) >= gradientScaled;
+												doneP = abs(lumaEndP) >= gradientScaled;
+												if(!doneN) posN.x -= offNP.x * FXAA_QUALITY_P11;
+												if(!doneN) posN.y -= offNP.y * FXAA_QUALITY_P11;
+												doneNP = (!doneN) || (!doneP);
+												if(!doneP) posP.x += offNP.x * FXAA_QUALITY_P11;
+												if(!doneP) posP.y += offNP.y * FXAA_QUALITY_P11;
+		/*--------------------------------------------------------------------------*/
+												#if (FXAA_QUALITY_PS > 12)
+												if(doneNP) {
+														if(!doneN) lumaEndN = FxaaLuma(FxaaTexTop(tex, posN.xy));
+														if(!doneP) lumaEndP = FxaaLuma(FxaaTexTop(tex, posP.xy));
+														if(!doneN) lumaEndN = lumaEndN - lumaNN * 0.5;
+														if(!doneP) lumaEndP = lumaEndP - lumaNN * 0.5;
+														doneN = abs(lumaEndN) >= gradientScaled;
+														doneP = abs(lumaEndP) >= gradientScaled;
+														if(!doneN) posN.x -= offNP.x * FXAA_QUALITY_P12;
+														if(!doneN) posN.y -= offNP.y * FXAA_QUALITY_P12;
+														doneNP = (!doneN) || (!doneP);
+														if(!doneP) posP.x += offNP.x * FXAA_QUALITY_P12;
+														if(!doneP) posP.y += offNP.y * FXAA_QUALITY_P12;
+		/*--------------------------------------------------------------------------*/
+												}
+												#endif
+		/*--------------------------------------------------------------------------*/
+										}
+										#endif
+		/*--------------------------------------------------------------------------*/
+								}
+								#endif
+		/*--------------------------------------------------------------------------*/
+						}
+						#endif
+		/*--------------------------------------------------------------------------*/
+				}
+				#endif
+		/*--------------------------------------------------------------------------*/
+														}
+														#endif
+		/*--------------------------------------------------------------------------*/
+												}
+												#endif
+		/*--------------------------------------------------------------------------*/
+										}
+										#endif
+		/*--------------------------------------------------------------------------*/
+								}
+								#endif
+		/*--------------------------------------------------------------------------*/
+						}
+						#endif
+		/*--------------------------------------------------------------------------*/
+				}
+		/*--------------------------------------------------------------------------*/
+				FxaaFloat dstN = posM.x - posN.x;
+				FxaaFloat dstP = posP.x - posM.x;
+				if(!horzSpan) dstN = posM.y - posN.y;
+				if(!horzSpan) dstP = posP.y - posM.y;
+		/*--------------------------------------------------------------------------*/
+				FxaaBool goodSpanN = (lumaEndN < 0.0) != lumaMLTZero;
+				FxaaFloat spanLength = (dstP + dstN);
+				FxaaBool goodSpanP = (lumaEndP < 0.0) != lumaMLTZero;
+				FxaaFloat spanLengthRcp = 1.0/spanLength;
+		/*--------------------------------------------------------------------------*/
+				FxaaBool directionN = dstN < dstP;
+				FxaaFloat dst = min(dstN, dstP);
+				FxaaBool goodSpan = directionN ? goodSpanN : goodSpanP;
+				FxaaFloat subpixG = subpixF * subpixF;
+				FxaaFloat pixelOffset = (dst * (-spanLengthRcp)) + 0.5;
+				FxaaFloat subpixH = subpixG * fxaaQualitySubpix;
+		/*--------------------------------------------------------------------------*/
+				FxaaFloat pixelOffsetGood = goodSpan ? pixelOffset : 0.0;
+				FxaaFloat pixelOffsetSubpix = max(pixelOffsetGood, subpixH);
+				if(!horzSpan) posM.x += pixelOffsetSubpix * lengthSign;
+				if( horzSpan) posM.y += pixelOffsetSubpix * lengthSign;
+				#if (FXAA_DISCARD == 1)
+						return FxaaTexTop(tex, posM);
+				#else
+						return FxaaFloat4(FxaaTexTop(tex, posM).xyz, lumaM);
+				#endif
+		}
+		/*==========================================================================*/
+		#endif
+
+		void main() {
+			gl_FragColor = FxaaPixelShader(
+				vUv,
+				vec4(0.0),
+				tDiffuse,
+				tDiffuse,
+				tDiffuse,
+				resolution,
+				vec4(0.0),
+				vec4(0.0),
+				vec4(0.0),
+				0.75,
+				0.166,
+				0.0833,
+				0.0,
+				0.0,
+				0.0,
+				vec4(0.0)
+			);
+
+			// TODO avoid querying texture twice for same texel
+			gl_FragColor.a = texture2D(tDiffuse, vUv).a;
+		}`
+	};
+
+	THREE.FXAAShader = FXAAShader;
+
+} )();
+
+</script>
+<script>
+/* ---- vendor/three-addons/EffectComposer.js ---- */
+( function () {
+
+	class EffectComposer {
+
+		constructor( renderer, renderTarget ) {
+
+			this.renderer = renderer;
+
+			if ( renderTarget === undefined ) {
+
+				const parameters = {
+					minFilter: THREE.LinearFilter,
+					magFilter: THREE.LinearFilter,
+					format: THREE.RGBAFormat
+				};
+				const size = renderer.getSize( new THREE.Vector2() );
+				this._pixelRatio = renderer.getPixelRatio();
+				this._width = size.width;
+				this._height = size.height;
+				renderTarget = new THREE.WebGLRenderTarget( this._width * this._pixelRatio, this._height * this._pixelRatio, parameters );
+				renderTarget.texture.name = 'EffectComposer.rt1';
+
+			} else {
+
+				this._pixelRatio = 1;
+				this._width = renderTarget.width;
+				this._height = renderTarget.height;
+
+			}
+
+			this.renderTarget1 = renderTarget;
+			this.renderTarget2 = renderTarget.clone();
+			this.renderTarget2.texture.name = 'EffectComposer.rt2';
+			this.writeBuffer = this.renderTarget1;
+			this.readBuffer = this.renderTarget2;
+			this.renderToScreen = true;
+			this.passes = []; // dependencies
+
+			if ( THREE.CopyShader === undefined ) {
+
+				console.error( 'THREE.EffectComposer relies on THREE.CopyShader' );
+
+			}
+
+			if ( THREE.ShaderPass === undefined ) {
+
+				console.error( 'THREE.EffectComposer relies on THREE.ShaderPass' );
+
+			}
+
+			this.copyPass = new THREE.ShaderPass( THREE.CopyShader );
+			this.clock = new THREE.Clock();
+
+		}
+
+		swapBuffers() {
+
+			const tmp = this.readBuffer;
+			this.readBuffer = this.writeBuffer;
+			this.writeBuffer = tmp;
+
+		}
+
+		addPass( pass ) {
+
+			this.passes.push( pass );
+			pass.setSize( this._width * this._pixelRatio, this._height * this._pixelRatio );
+
+		}
+
+		insertPass( pass, index ) {
+
+			this.passes.splice( index, 0, pass );
+			pass.setSize( this._width * this._pixelRatio, this._height * this._pixelRatio );
+
+		}
+
+		removePass( pass ) {
+
+			const index = this.passes.indexOf( pass );
+
+			if ( index !== - 1 ) {
+
+				this.passes.splice( index, 1 );
+
+			}
+
+		}
+
+		isLastEnabledPass( passIndex ) {
+
+			for ( let i = passIndex + 1; i < this.passes.length; i ++ ) {
+
+				if ( this.passes[ i ].enabled ) {
+
+					return false;
+
+				}
+
+			}
+
+			return true;
+
+		}
+
+		render( deltaTime ) {
+
+			// deltaTime value is in seconds
+			if ( deltaTime === undefined ) {
+
+				deltaTime = this.clock.getDelta();
+
+			}
+
+			const currentRenderTarget = this.renderer.getRenderTarget();
+			let maskActive = false;
+
+			for ( let i = 0, il = this.passes.length; i < il; i ++ ) {
+
+				const pass = this.passes[ i ];
+				if ( pass.enabled === false ) continue;
+				pass.renderToScreen = this.renderToScreen && this.isLastEnabledPass( i );
+				pass.render( this.renderer, this.writeBuffer, this.readBuffer, deltaTime, maskActive );
+
+				if ( pass.needsSwap ) {
+
+					if ( maskActive ) {
+
+						const context = this.renderer.getContext();
+						const stencil = this.renderer.state.buffers.stencil; //context.stencilFunc( context.NOTEQUAL, 1, 0xffffffff );
+
+						stencil.setFunc( context.NOTEQUAL, 1, 0xffffffff );
+						this.copyPass.render( this.renderer, this.writeBuffer, this.readBuffer, deltaTime ); //context.stencilFunc( context.EQUAL, 1, 0xffffffff );
+
+						stencil.setFunc( context.EQUAL, 1, 0xffffffff );
+
+					}
+
+					this.swapBuffers();
+
+				}
+
+				if ( THREE.MaskPass !== undefined ) {
+
+					if ( pass instanceof THREE.MaskPass ) {
+
+						maskActive = true;
+
+					} else if ( pass instanceof THREE.ClearMaskPass ) {
+
+						maskActive = false;
+
+					}
+
+				}
+
+			}
+
+			this.renderer.setRenderTarget( currentRenderTarget );
+
+		}
+
+		reset( renderTarget ) {
+
+			if ( renderTarget === undefined ) {
+
+				const size = this.renderer.getSize( new THREE.Vector2() );
+				this._pixelRatio = this.renderer.getPixelRatio();
+				this._width = size.width;
+				this._height = size.height;
+				renderTarget = this.renderTarget1.clone();
+				renderTarget.setSize( this._width * this._pixelRatio, this._height * this._pixelRatio );
+
+			}
+
+			this.renderTarget1.dispose();
+			this.renderTarget2.dispose();
+			this.renderTarget1 = renderTarget;
+			this.renderTarget2 = renderTarget.clone();
+			this.writeBuffer = this.renderTarget1;
+			this.readBuffer = this.renderTarget2;
+
+		}
+
+		setSize( width, height ) {
+
+			this._width = width;
+			this._height = height;
+			const effectiveWidth = this._width * this._pixelRatio;
+			const effectiveHeight = this._height * this._pixelRatio;
+			this.renderTarget1.setSize( effectiveWidth, effectiveHeight );
+			this.renderTarget2.setSize( effectiveWidth, effectiveHeight );
+
+			for ( let i = 0; i < this.passes.length; i ++ ) {
+
+				this.passes[ i ].setSize( effectiveWidth, effectiveHeight );
+
+			}
+
+		}
+
+		setPixelRatio( pixelRatio ) {
+
+			this._pixelRatio = pixelRatio;
+			this.setSize( this._width, this._height );
+
+		}
+
+	}
+
+	class Pass {
+
+		constructor() {
+
+			// if set to true, the pass is processed by the composer
+			this.enabled = true; // if set to true, the pass indicates to swap read and write buffer after rendering
+
+			this.needsSwap = true; // if set to true, the pass clears its buffer before rendering
+
+			this.clear = false; // if set to true, the result of the pass is rendered to screen. This is set automatically by EffectComposer.
+
+			this.renderToScreen = false;
+
+		}
+
+		setSize( ) {}
+
+		render( ) {
+
+			console.error( 'THREE.Pass: .render() must be implemented in derived pass.' );
+
+		}
+
+	} // Helper for passes that need to fill the viewport with a single quad.
+
+
+	const _camera = new THREE.OrthographicCamera( - 1, 1, 1, - 1, 0, 1 ); // https://github.com/mrdoob/three.js/pull/21358
+
+
+	const _geometry = new THREE.BufferGeometry();
+
+	_geometry.setAttribute( 'position', new THREE.Float32BufferAttribute( [ - 1, 3, 0, - 1, - 1, 0, 3, - 1, 0 ], 3 ) );
+
+	_geometry.setAttribute( 'uv', new THREE.Float32BufferAttribute( [ 0, 2, 0, 0, 2, 0 ], 2 ) );
+
+	class FullScreenQuad {
+
+		constructor( material ) {
+
+			this._mesh = new THREE.Mesh( _geometry, material );
+
+		}
+
+		dispose() {
+
+			this._mesh.geometry.dispose();
+
+		}
+
+		render( renderer ) {
+
+			renderer.render( this._mesh, _camera );
+
+		}
+
+		get material() {
+
+			return this._mesh.material;
+
+		}
+
+		set material( value ) {
+
+			this._mesh.material = value;
+
+		}
+
+	}
+
+	THREE.EffectComposer = EffectComposer;
+	THREE.FullScreenQuad = FullScreenQuad;
+	THREE.Pass = Pass;
+
+} )();
+
+</script>
+<script>
+/* ---- vendor/three-addons/RenderPass.js ---- */
+( function () {
+
+	class RenderPass extends THREE.Pass {
+
+		constructor( scene, camera, overrideMaterial, clearColor, clearAlpha ) {
+
+			super();
+			this.scene = scene;
+			this.camera = camera;
+			this.overrideMaterial = overrideMaterial;
+			this.clearColor = clearColor;
+			this.clearAlpha = clearAlpha !== undefined ? clearAlpha : 0;
+			this.clear = true;
+			this.clearDepth = false;
+			this.needsSwap = false;
+			this._oldClearColor = new THREE.Color();
+
+		}
+
+		render( renderer, writeBuffer, readBuffer
+			/*, deltaTime, maskActive */
+		) {
+
+			const oldAutoClear = renderer.autoClear;
+			renderer.autoClear = false;
+			let oldClearAlpha, oldOverrideMaterial;
+
+			if ( this.overrideMaterial !== undefined ) {
+
+				oldOverrideMaterial = this.scene.overrideMaterial;
+				this.scene.overrideMaterial = this.overrideMaterial;
+
+			}
+
+			if ( this.clearColor ) {
+
+				renderer.getClearColor( this._oldClearColor );
+				oldClearAlpha = renderer.getClearAlpha();
+				renderer.setClearColor( this.clearColor, this.clearAlpha );
+
+			}
+
+			if ( this.clearDepth ) {
+
+				renderer.clearDepth();
+
+			}
+
+			renderer.setRenderTarget( this.renderToScreen ? null : readBuffer ); // TODO: Avoid using autoClear properties, see https://github.com/mrdoob/three.js/pull/15571#issuecomment-465669600
+
+			if ( this.clear ) renderer.clear( renderer.autoClearColor, renderer.autoClearDepth, renderer.autoClearStencil );
+			renderer.render( this.scene, this.camera );
+
+			if ( this.clearColor ) {
+
+				renderer.setClearColor( this._oldClearColor, oldClearAlpha );
+
+			}
+
+			if ( this.overrideMaterial !== undefined ) {
+
+				this.scene.overrideMaterial = oldOverrideMaterial;
+
+			}
+
+			renderer.autoClear = oldAutoClear;
+
+		}
+
+	}
+
+	THREE.RenderPass = RenderPass;
+
+} )();
+
+</script>
+<script>
+/* ---- vendor/three-addons/ShaderPass.js ---- */
+( function () {
+
+	class ShaderPass extends THREE.Pass {
+
+		constructor( shader, textureID ) {
+
+			super();
+			this.textureID = textureID !== undefined ? textureID : 'tDiffuse';
+
+			if ( shader instanceof THREE.ShaderMaterial ) {
+
+				this.uniforms = shader.uniforms;
+				this.material = shader;
+
+			} else if ( shader ) {
+
+				this.uniforms = THREE.UniformsUtils.clone( shader.uniforms );
+				this.material = new THREE.ShaderMaterial( {
+					defines: Object.assign( {}, shader.defines ),
+					uniforms: this.uniforms,
+					vertexShader: shader.vertexShader,
+					fragmentShader: shader.fragmentShader
+				} );
+
+			}
+
+			this.fsQuad = new THREE.FullScreenQuad( this.material );
+
+		}
+
+		render( renderer, writeBuffer, readBuffer
+			/*, deltaTime, maskActive */
+		) {
+
+			if ( this.uniforms[ this.textureID ] ) {
+
+				this.uniforms[ this.textureID ].value = readBuffer.texture;
+
+			}
+
+			this.fsQuad.material = this.material;
+
+			if ( this.renderToScreen ) {
+
+				renderer.setRenderTarget( null );
+				this.fsQuad.render( renderer );
+
+			} else {
+
+				renderer.setRenderTarget( writeBuffer ); // TODO: Avoid using autoClear properties, see https://github.com/mrdoob/three.js/pull/15571#issuecomment-465669600
+
+				if ( this.clear ) renderer.clear( renderer.autoClearColor, renderer.autoClearDepth, renderer.autoClearStencil );
+				this.fsQuad.render( renderer );
+
+			}
+
+		}
+
+	}
+
+	THREE.ShaderPass = ShaderPass;
+
+} )();
+
+</script>
+<script>
+/* ---- vendor/three-addons/MaskPass.js ---- */
+( function () {
+
+	class MaskPass extends THREE.Pass {
+
+		constructor( scene, camera ) {
+
+			super();
+			this.scene = scene;
+			this.camera = camera;
+			this.clear = true;
+			this.needsSwap = false;
+			this.inverse = false;
+
+		}
+
+		render( renderer, writeBuffer, readBuffer
+			/*, deltaTime, maskActive */
+		) {
+
+			const context = renderer.getContext();
+			const state = renderer.state; // don't update color or depth
+
+			state.buffers.color.setMask( false );
+			state.buffers.depth.setMask( false ); // lock buffers
+
+			state.buffers.color.setLocked( true );
+			state.buffers.depth.setLocked( true ); // set up stencil
+
+			let writeValue, clearValue;
+
+			if ( this.inverse ) {
+
+				writeValue = 0;
+				clearValue = 1;
+
+			} else {
+
+				writeValue = 1;
+				clearValue = 0;
+
+			}
+
+			state.buffers.stencil.setTest( true );
+			state.buffers.stencil.setOp( context.REPLACE, context.REPLACE, context.REPLACE );
+			state.buffers.stencil.setFunc( context.ALWAYS, writeValue, 0xffffffff );
+			state.buffers.stencil.setClear( clearValue );
+			state.buffers.stencil.setLocked( true ); // draw into the stencil buffer
+
+			renderer.setRenderTarget( readBuffer );
+			if ( this.clear ) renderer.clear();
+			renderer.render( this.scene, this.camera );
+			renderer.setRenderTarget( writeBuffer );
+			if ( this.clear ) renderer.clear();
+			renderer.render( this.scene, this.camera ); // unlock color and depth buffer for subsequent rendering
+
+			state.buffers.color.setLocked( false );
+			state.buffers.depth.setLocked( false ); // only render where stencil is set to 1
+
+			state.buffers.stencil.setLocked( false );
+			state.buffers.stencil.setFunc( context.EQUAL, 1, 0xffffffff ); // draw if == 1
+
+			state.buffers.stencil.setOp( context.KEEP, context.KEEP, context.KEEP );
+			state.buffers.stencil.setLocked( true );
+
+		}
+
+	}
+
+	class ClearMaskPass extends THREE.Pass {
+
+		constructor() {
+
+			super();
+			this.needsSwap = false;
+
+		}
+
+		render( renderer
+			/*, writeBuffer, readBuffer, deltaTime, maskActive */
+		) {
+
+			renderer.state.buffers.stencil.setLocked( false );
+			renderer.state.buffers.stencil.setTest( false );
+
+		}
+
+	}
+
+	THREE.ClearMaskPass = ClearMaskPass;
+	THREE.MaskPass = MaskPass;
+
+} )();
+
+</script>
+<script>
+/* ---- vendor/three-addons/UnrealBloomPass.js ---- */
+( function () {
+
+	/**
+ * UnrealBloomPass is inspired by the bloom pass of Unreal Engine. It creates a
+ * mip map chain of bloom textures and blurs them with different radii. Because
+ * of the weighted combination of mips, and because larger blurs are done on
+ * higher mips, this effect provides good quality and performance.
+ *
+ * Reference:
+ * - https://docs.unrealengine.com/latest/INT/Engine/Rendering/PostProcessEffects/Bloom/
+ */
+
+	class UnrealBloomPass extends THREE.Pass {
+
+		constructor( resolution, strength, radius, threshold ) {
+
+			super();
+			this.strength = strength !== undefined ? strength : 1;
+			this.radius = radius;
+			this.threshold = threshold;
+			this.resolution = resolution !== undefined ? new THREE.Vector2( resolution.x, resolution.y ) : new THREE.Vector2( 256, 256 ); // create color only once here, reuse it later inside the render function
+
+			this.clearColor = new THREE.Color( 0, 0, 0 ); // render targets
+
+			const pars = {
+				minFilter: THREE.LinearFilter,
+				magFilter: THREE.LinearFilter,
+				format: THREE.RGBAFormat
+			};
+			this.renderTargetsHorizontal = [];
+			this.renderTargetsVertical = [];
+			this.nMips = 5;
+			let resx = Math.round( this.resolution.x / 2 );
+			let resy = Math.round( this.resolution.y / 2 );
+			this.renderTargetBright = new THREE.WebGLRenderTarget( resx, resy, pars );
+			this.renderTargetBright.texture.name = 'UnrealBloomPass.bright';
+			this.renderTargetBright.texture.generateMipmaps = false;
+
+			for ( let i = 0; i < this.nMips; i ++ ) {
+
+				const renderTargetHorizonal = new THREE.WebGLRenderTarget( resx, resy, pars );
+				renderTargetHorizonal.texture.name = 'UnrealBloomPass.h' + i;
+				renderTargetHorizonal.texture.generateMipmaps = false;
+				this.renderTargetsHorizontal.push( renderTargetHorizonal );
+				const renderTargetVertical = new THREE.WebGLRenderTarget( resx, resy, pars );
+				renderTargetVertical.texture.name = 'UnrealBloomPass.v' + i;
+				renderTargetVertical.texture.generateMipmaps = false;
+				this.renderTargetsVertical.push( renderTargetVertical );
+				resx = Math.round( resx / 2 );
+				resy = Math.round( resy / 2 );
+
+			} // luminosity high pass material
+
+
+			if ( THREE.LuminosityHighPassShader === undefined ) console.error( 'THREE.UnrealBloomPass relies on THREE.LuminosityHighPassShader' );
+			const highPassShader = THREE.LuminosityHighPassShader;
+			this.highPassUniforms = THREE.UniformsUtils.clone( highPassShader.uniforms );
+			this.highPassUniforms[ 'luminosityThreshold' ].value = threshold;
+			this.highPassUniforms[ 'smoothWidth' ].value = 0.01;
+			this.materialHighPassFilter = new THREE.ShaderMaterial( {
+				uniforms: this.highPassUniforms,
+				vertexShader: highPassShader.vertexShader,
+				fragmentShader: highPassShader.fragmentShader,
+				defines: {}
+			} ); // Gaussian Blur Materials
+
+			this.separableBlurMaterials = [];
+			const kernelSizeArray = [ 3, 5, 7, 9, 11 ];
+			resx = Math.round( this.resolution.x / 2 );
+			resy = Math.round( this.resolution.y / 2 );
+
+			for ( let i = 0; i < this.nMips; i ++ ) {
+
+				this.separableBlurMaterials.push( this.getSeperableBlurMaterial( kernelSizeArray[ i ] ) );
+				this.separableBlurMaterials[ i ].uniforms[ 'texSize' ].value = new THREE.Vector2( resx, resy );
+				resx = Math.round( resx / 2 );
+				resy = Math.round( resy / 2 );
+
+			} // Composite material
+
+
+			this.compositeMaterial = this.getCompositeMaterial( this.nMips );
+			this.compositeMaterial.uniforms[ 'blurTexture1' ].value = this.renderTargetsVertical[ 0 ].texture;
+			this.compositeMaterial.uniforms[ 'blurTexture2' ].value = this.renderTargetsVertical[ 1 ].texture;
+			this.compositeMaterial.uniforms[ 'blurTexture3' ].value = this.renderTargetsVertical[ 2 ].texture;
+			this.compositeMaterial.uniforms[ 'blurTexture4' ].value = this.renderTargetsVertical[ 3 ].texture;
+			this.compositeMaterial.uniforms[ 'blurTexture5' ].value = this.renderTargetsVertical[ 4 ].texture;
+			this.compositeMaterial.uniforms[ 'bloomStrength' ].value = strength;
+			this.compositeMaterial.uniforms[ 'bloomRadius' ].value = 0.1;
+			this.compositeMaterial.needsUpdate = true;
+			const bloomFactors = [ 1.0, 0.8, 0.6, 0.4, 0.2 ];
+			this.compositeMaterial.uniforms[ 'bloomFactors' ].value = bloomFactors;
+			this.bloomTintColors = [ new THREE.Vector3( 1, 1, 1 ), new THREE.Vector3( 1, 1, 1 ), new THREE.Vector3( 1, 1, 1 ), new THREE.Vector3( 1, 1, 1 ), new THREE.Vector3( 1, 1, 1 ) ];
+			this.compositeMaterial.uniforms[ 'bloomTintColors' ].value = this.bloomTintColors; // copy material
+
+			if ( THREE.CopyShader === undefined ) {
+
+				console.error( 'THREE.UnrealBloomPass relies on THREE.CopyShader' );
+
+			}
+
+			const copyShader = THREE.CopyShader;
+			this.copyUniforms = THREE.UniformsUtils.clone( copyShader.uniforms );
+			this.copyUniforms[ 'opacity' ].value = 1.0;
+			this.materialCopy = new THREE.ShaderMaterial( {
+				uniforms: this.copyUniforms,
+				vertexShader: copyShader.vertexShader,
+				fragmentShader: copyShader.fragmentShader,
+				blending: THREE.AdditiveBlending,
+				depthTest: false,
+				depthWrite: false,
+				transparent: true
+			} );
+			this.enabled = true;
+			this.needsSwap = false;
+			this._oldClearColor = new THREE.Color();
+			this.oldClearAlpha = 1;
+			this.basic = new THREE.MeshBasicMaterial();
+			this.fsQuad = new THREE.FullScreenQuad( null );
+
+		}
+
+		dispose() {
+
+			for ( let i = 0; i < this.renderTargetsHorizontal.length; i ++ ) {
+
+				this.renderTargetsHorizontal[ i ].dispose();
+
+			}
+
+			for ( let i = 0; i < this.renderTargetsVertical.length; i ++ ) {
+
+				this.renderTargetsVertical[ i ].dispose();
+
+			}
+
+			this.renderTargetBright.dispose();
+
+		}
+
+		setSize( width, height ) {
+
+			let resx = Math.round( width / 2 );
+			let resy = Math.round( height / 2 );
+			this.renderTargetBright.setSize( resx, resy );
+
+			for ( let i = 0; i < this.nMips; i ++ ) {
+
+				this.renderTargetsHorizontal[ i ].setSize( resx, resy );
+				this.renderTargetsVertical[ i ].setSize( resx, resy );
+				this.separableBlurMaterials[ i ].uniforms[ 'texSize' ].value = new THREE.Vector2( resx, resy );
+				resx = Math.round( resx / 2 );
+				resy = Math.round( resy / 2 );
+
+			}
+
+		}
+
+		render( renderer, writeBuffer, readBuffer, deltaTime, maskActive ) {
+
+			renderer.getClearColor( this._oldClearColor );
+			this.oldClearAlpha = renderer.getClearAlpha();
+			const oldAutoClear = renderer.autoClear;
+			renderer.autoClear = false;
+			renderer.setClearColor( this.clearColor, 0 );
+			if ( maskActive ) renderer.state.buffers.stencil.setTest( false ); // Render input to screen
+
+			if ( this.renderToScreen ) {
+
+				this.fsQuad.material = this.basic;
+				this.basic.map = readBuffer.texture;
+				renderer.setRenderTarget( null );
+				renderer.clear();
+				this.fsQuad.render( renderer );
+
+			} // 1. Extract Bright Areas
+
+
+			this.highPassUniforms[ 'tDiffuse' ].value = readBuffer.texture;
+			this.highPassUniforms[ 'luminosityThreshold' ].value = this.threshold;
+			this.fsQuad.material = this.materialHighPassFilter;
+			renderer.setRenderTarget( this.renderTargetBright );
+			renderer.clear();
+			this.fsQuad.render( renderer ); // 2. Blur All the mips progressively
+
+			let inputRenderTarget = this.renderTargetBright;
+
+			for ( let i = 0; i < this.nMips; i ++ ) {
+
+				this.fsQuad.material = this.separableBlurMaterials[ i ];
+				this.separableBlurMaterials[ i ].uniforms[ 'colorTexture' ].value = inputRenderTarget.texture;
+				this.separableBlurMaterials[ i ].uniforms[ 'direction' ].value = UnrealBloomPass.BlurDirectionX;
+				renderer.setRenderTarget( this.renderTargetsHorizontal[ i ] );
+				renderer.clear();
+				this.fsQuad.render( renderer );
+				this.separableBlurMaterials[ i ].uniforms[ 'colorTexture' ].value = this.renderTargetsHorizontal[ i ].texture;
+				this.separableBlurMaterials[ i ].uniforms[ 'direction' ].value = UnrealBloomPass.BlurDirectionY;
+				renderer.setRenderTarget( this.renderTargetsVertical[ i ] );
+				renderer.clear();
+				this.fsQuad.render( renderer );
+				inputRenderTarget = this.renderTargetsVertical[ i ];
+
+			} // Composite All the mips
+
+
+			this.fsQuad.material = this.compositeMaterial;
+			this.compositeMaterial.uniforms[ 'bloomStrength' ].value = this.strength;
+			this.compositeMaterial.uniforms[ 'bloomRadius' ].value = this.radius;
+			this.compositeMaterial.uniforms[ 'bloomTintColors' ].value = this.bloomTintColors;
+			renderer.setRenderTarget( this.renderTargetsHorizontal[ 0 ] );
+			renderer.clear();
+			this.fsQuad.render( renderer ); // Blend it additively over the input texture
+
+			this.fsQuad.material = this.materialCopy;
+			this.copyUniforms[ 'tDiffuse' ].value = this.renderTargetsHorizontal[ 0 ].texture;
+			if ( maskActive ) renderer.state.buffers.stencil.setTest( true );
+
+			if ( this.renderToScreen ) {
+
+				renderer.setRenderTarget( null );
+				this.fsQuad.render( renderer );
+
+			} else {
+
+				renderer.setRenderTarget( readBuffer );
+				this.fsQuad.render( renderer );
+
+			} // Restore renderer settings
+
+
+			renderer.setClearColor( this._oldClearColor, this.oldClearAlpha );
+			renderer.autoClear = oldAutoClear;
+
+		}
+
+		getSeperableBlurMaterial( kernelRadius ) {
+
+			return new THREE.ShaderMaterial( {
+				defines: {
+					'KERNEL_RADIUS': kernelRadius,
+					'SIGMA': kernelRadius
+				},
+				uniforms: {
+					'colorTexture': {
+						value: null
+					},
+					'texSize': {
+						value: new THREE.Vector2( 0.5, 0.5 )
+					},
+					'direction': {
+						value: new THREE.Vector2( 0.5, 0.5 )
+					}
+				},
+				vertexShader: `varying vec2 vUv;
+				void main() {
+					vUv = uv;
+					gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+				}`,
+				fragmentShader: `#include <common>
+				varying vec2 vUv;
+				uniform sampler2D colorTexture;
+				uniform vec2 texSize;
+				uniform vec2 direction;
+
+				float gaussianPdf(in float x, in float sigma) {
+					return 0.39894 * exp( -0.5 * x * x/( sigma * sigma))/sigma;
+				}
+				void main() {
+					vec2 invSize = 1.0 / texSize;
+					float fSigma = float(SIGMA);
+					float weightSum = gaussianPdf(0.0, fSigma);
+					vec3 diffuseSum = texture2D( colorTexture, vUv).rgb * weightSum;
+					for( int i = 1; i < KERNEL_RADIUS; i ++ ) {
+						float x = float(i);
+						float w = gaussianPdf(x, fSigma);
+						vec2 uvOffset = direction * invSize * x;
+						vec3 sample1 = texture2D( colorTexture, vUv + uvOffset).rgb;
+						vec3 sample2 = texture2D( colorTexture, vUv - uvOffset).rgb;
+						diffuseSum += (sample1 + sample2) * w;
+						weightSum += 2.0 * w;
+					}
+					gl_FragColor = vec4(diffuseSum/weightSum, 1.0);
+				}`
+			} );
+
+		}
+
+		getCompositeMaterial( nMips ) {
+
+			return new THREE.ShaderMaterial( {
+				defines: {
+					'NUM_MIPS': nMips
+				},
+				uniforms: {
+					'blurTexture1': {
+						value: null
+					},
+					'blurTexture2': {
+						value: null
+					},
+					'blurTexture3': {
+						value: null
+					},
+					'blurTexture4': {
+						value: null
+					},
+					'blurTexture5': {
+						value: null
+					},
+					'dirtTexture': {
+						value: null
+					},
+					'bloomStrength': {
+						value: 1.0
+					},
+					'bloomFactors': {
+						value: null
+					},
+					'bloomTintColors': {
+						value: null
+					},
+					'bloomRadius': {
+						value: 0.0
+					}
+				},
+				vertexShader: `varying vec2 vUv;
+				void main() {
+					vUv = uv;
+					gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+				}`,
+				fragmentShader: `varying vec2 vUv;
+				uniform sampler2D blurTexture1;
+				uniform sampler2D blurTexture2;
+				uniform sampler2D blurTexture3;
+				uniform sampler2D blurTexture4;
+				uniform sampler2D blurTexture5;
+				uniform sampler2D dirtTexture;
+				uniform float bloomStrength;
+				uniform float bloomRadius;
+				uniform float bloomFactors[NUM_MIPS];
+				uniform vec3 bloomTintColors[NUM_MIPS];
+
+				float lerpBloomFactor(const in float factor) {
+					float mirrorFactor = 1.2 - factor;
+					return mix(factor, mirrorFactor, bloomRadius);
+				}
+
+				void main() {
+					gl_FragColor = bloomStrength * ( lerpBloomFactor(bloomFactors[0]) * vec4(bloomTintColors[0], 1.0) * texture2D(blurTexture1, vUv) +
+						lerpBloomFactor(bloomFactors[1]) * vec4(bloomTintColors[1], 1.0) * texture2D(blurTexture2, vUv) +
+						lerpBloomFactor(bloomFactors[2]) * vec4(bloomTintColors[2], 1.0) * texture2D(blurTexture3, vUv) +
+						lerpBloomFactor(bloomFactors[3]) * vec4(bloomTintColors[3], 1.0) * texture2D(blurTexture4, vUv) +
+						lerpBloomFactor(bloomFactors[4]) * vec4(bloomTintColors[4], 1.0) * texture2D(blurTexture5, vUv) );
+				}`
+			} );
+
+		}
+
+	}
+
+	UnrealBloomPass.BlurDirectionX = new THREE.Vector2( 1.0, 0.0 );
+	UnrealBloomPass.BlurDirectionY = new THREE.Vector2( 0.0, 1.0 );
+
+	THREE.UnrealBloomPass = UnrealBloomPass;
+
+} )();
+
+</script>
+<script>
 /* ---- src/00-core.js ---- */
 /* ------------------------------------------------------------------
    Oasis — kerne: matematik, støj og deterministisk tilfældighed.
@@ -322,8 +2467,10 @@
   const SPINE = buildSpine();
 
   // Afstand til flodens midterlinje + den lokale bredde på det sted.
-  const _res = { d: 0, w: 0 };
-  function river(x, z) {
+  // Den eksakte udgave løber hele rygraden igennem og er for dyr til at
+  // kalde hundredtusindvis af gange, så resultatet lægges i et gitter og
+  // slås op med bilineær interpolation bagefter.
+  function riverExact(x, z, out) {
     let best = Infinity, bw = 12;
     for (let i = 0; i < SPINE.length - 1; i++) {
       const a = SPINE[i], b = SPINE[i + 1];
@@ -332,16 +2479,50 @@
       const len2 = vx * vx + vz * vz;
       let t = len2 > 0 ? (wx * vx + wz * vz) / len2 : 0;
       t = t < 0 ? 0 : t > 1 ? 1 : t;
-      const px = a.x + vx * t, pz = a.z + vz * t;
-      const dx = x - px, dz = z - pz;
+      const dx = x - (a.x + vx * t), dz = z - (a.z + vz * t);
       const d2 = dx * dx + dz * dz;
-      if (d2 < best) {
-        best = d2;
-        bw = M.lerp(a.w, b.w, t);
+      if (d2 < best) { best = d2; bw = M.lerp(a.w, b.w, t); }
+    }
+    out.d = Math.sqrt(best);
+    out.w = bw;
+    return out;
+  }
+
+  const GRID_N = 320;
+  const GRID_EXTENT = 420;          // gitteret dækker mere end verden er stor
+  const gridD = new Float32Array(GRID_N * GRID_N);
+  const gridW = new Float32Array(GRID_N * GRID_N);
+  (function buildGrid() {
+    const tmp = { d: 0, w: 0 };
+    const step = (GRID_EXTENT * 2) / (GRID_N - 1);
+    for (let j = 0; j < GRID_N; j++) {
+      const z = -GRID_EXTENT + j * step;
+      for (let i = 0; i < GRID_N; i++) {
+        const x = -GRID_EXTENT + i * step;
+        riverExact(x, z, tmp);
+        gridD[j * GRID_N + i] = tmp.d;
+        gridW[j * GRID_N + i] = tmp.w;
       }
     }
-    _res.d = Math.sqrt(best);
-    _res.w = bw;
+  })();
+
+  const _res = { d: 0, w: 0 };
+  function river(x, z) {
+    const step = (GRID_EXTENT * 2) / (GRID_N - 1);
+    let fx = (x + GRID_EXTENT) / step;
+    let fz = (z + GRID_EXTENT) / step;
+    if (fx < 0 || fz < 0 || fx > GRID_N - 1.001 || fz > GRID_N - 1.001) {
+      return riverExact(x, z, _res);
+    }
+    const i0 = fx | 0, j0 = fz | 0;
+    const tx = fx - i0, tz = fz - j0;
+    const k00 = j0 * GRID_N + i0, k10 = k00 + 1, k01 = k00 + GRID_N, k11 = k01 + 1;
+    const d0 = gridD[k00] + (gridD[k10] - gridD[k00]) * tx;
+    const d1 = gridD[k01] + (gridD[k11] - gridD[k01]) * tx;
+    const w0 = gridW[k00] + (gridW[k10] - gridW[k00]) * tx;
+    const w1 = gridW[k01] + (gridW[k11] - gridW[k01]) * tx;
+    _res.d = d0 + (d1 - d0) * tz;
+    _res.w = w0 + (w1 - w0) * tz;
     return _res;
   }
 
@@ -408,44 +2589,78 @@
 <script>
 /* ---- src/20-textures.js ---- */
 /* ------------------------------------------------------------------
-   Alle teksturer tegnes i browseren med canvas — ingen filer at
-   hente, så scenen kan åbnes direkte uden nogen assets.
+   Alle teksturer tegnes i browseren med canvas — ingen filer at hente.
+
+   Ud over farve- og normalkort laves der også ruhedskort (hårde
+   sandstensbænke er blankere end de bløde), et fint detaljekort der
+   lægges oven på alt i høj tæthed, og et storskala-kort der bryder
+   gentagelsen i sandet.
    ------------------------------------------------------------------ */
 (function () {
   const O = window.OASIS;
   const M = O.math;
 
-  function canvas(size, h) {
+  /* ---- Hurtig støj (heltalshash i stedet for sin) — teksturerne skal
+         genereres på under et sekund. ---- */
+  function ihash(x, y) {
+    let h = Math.imul(x | 0, 374761393) + Math.imul(y | 0, 668265263) | 0;
+    h = Math.imul(h ^ (h >>> 13), 1274126177) | 0;
+    return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+  }
+  function tnoise(x, y) {
+    const xi = Math.floor(x), yi = Math.floor(y);
+    const xf = x - xi, yf = y - yi;
+    const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+    const a = ihash(xi, yi), b = ihash(xi + 1, yi);
+    const c = ihash(xi, yi + 1), d = ihash(xi + 1, yi + 1);
+    return (a + (b - a) * u) + ((c + (d - c) * u) - (a + (b - a) * u)) * v;
+  }
+  function tfbm(x, y, oct) {
+    let s = 0, a = 0.5, f = 1, n = 0;
+    for (let i = 0; i < oct; i++) { s += a * tnoise(x * f, y * f); n += a; a *= 0.5; f *= 2.03; }
+    return s / n;
+  }
+  function tridged(x, y, oct) {
+    let s = 0, a = 0.5, f = 1, n = 0;
+    for (let i = 0; i < oct; i++) {
+      const v = 1 - Math.abs(tnoise(x * f, y * f) * 2 - 1);
+      s += a * v * v; n += a; a *= 0.55; f *= 2.11;
+    }
+    return s / n;
+  }
+
+  let maxAniso = 8;
+
+  function canvas(w, h) {
     const c = document.createElement('canvas');
-    c.width = size;
-    c.height = h || size;
+    c.width = w; c.height = h || w;
     return c;
   }
 
-  function toTexture(c, repeat) {
+  function toTexture(c, repeat, srgb) {
     const t = new THREE.CanvasTexture(c);
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    t.anisotropy = 8;
+    t.anisotropy = maxAniso;
     if (repeat) t.repeat.set(repeat, repeat);
+    if (srgb) t.encoding = THREE.sRGBEncoding;
     return t;
   }
 
-  // Sobel-filter der laver et normalkort ud fra en gråtoneskitse.
+  // Normalkort ud fra en gråtonehøjde (Sobel).
   function normalFromHeight(src, strength) {
-    const s = src.width, hgt = src.height;
-    const sctx = src.getContext('2d');
-    const data = sctx.getImageData(0, 0, s, hgt).data;
-    const out = canvas(s, hgt);
+    const w = src.width, h = src.height;
+    const data = src.getContext('2d').getImageData(0, 0, w, h).data;
+    const out = canvas(w, h);
     const octx = out.getContext('2d');
-    const img = octx.createImageData(s, hgt);
-    const at = (x, y) => data[((y + hgt) % hgt * s + ((x + s) % s)) * 4] / 255;
-    for (let y = 0; y < hgt; y++) {
-      for (let x = 0; x < s; x++) {
+    const img = octx.createImageData(w, h);
+    const at = (x, y) => data[(((y + h) % h) * w + ((x + w) % w)) * 4] / 255;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
         const dx = (at(x + 1, y) - at(x - 1, y)) * strength;
         const dy = (at(x, y + 1) - at(x, y - 1)) * strength;
-        let nx = -dx, ny = -dy, nz = 1;
-        const l = Math.hypot(nx, ny, nz);
-        const i = (y * s + x) * 4;
+        const nx = -dx, ny = -dy, nz = 1;
+        const l = Math.sqrt(nx * nx + ny * ny + 1);
+        const i = (y * w + x) * 4;
         img.data[i] = (nx / l * 0.5 + 0.5) * 255;
         img.data[i + 1] = (ny / l * 0.5 + 0.5) * 255;
         img.data[i + 2] = (nz / l * 0.5 + 0.5) * 255;
@@ -456,123 +2671,261 @@
     return out;
   }
 
-  /* ---- Sand ---- */
+  /* ---------- Sand ---------- */
   function sandMaps() {
     const S = 512;
-    const col = canvas(S);
-    const hgt = canvas(S);
-    const cctx = col.getContext('2d');
-    const hctx = hgt.getContext('2d');
-    const ci = cctx.createImageData(S, S);
-    const hi = hctx.createImageData(S, S);
+    const col = canvas(S), hgt = canvas(S), rough = canvas(S);
+    const ci = col.getContext('2d').createImageData(S, S);
+    const hi = hgt.getContext('2d').createImageData(S, S);
+    const ri = rough.getContext('2d').createImageData(S, S);
     for (let y = 0; y < S; y++) {
       for (let x = 0; x < S; x++) {
         const i = (y * S + x) * 4;
-        const grain = M.fbm(x * 0.35, y * 0.35, 3);
-        const ripple = Math.sin((x * 0.055 + M.fbm(x * 0.02, y * 0.02, 2) * 3.0)) * 0.5;
-        const speck = M.hash2(x, y) > 0.985 ? 0.32 : 0;
-        const v = 0.5 + grain * 0.14 + ripple * 0.06 + speck;
-        ci.data[i] = M.clamp(214 * v + 34, 0, 255);
-        ci.data[i + 1] = M.clamp(184 * v + 26, 0, 255);
-        ci.data[i + 2] = M.clamp(142 * v + 16, 0, 255);
+        const grain = tfbm(x * 0.9, y * 0.9, 3) - 0.5;
+        const micro = tnoise(x * 3.1, y * 3.1) - 0.5;
+        // To sæt vindribber i lidt forskellig retning.
+        const r1 = Math.sin((x * 0.10 + y * 0.035) + tfbm(x * 0.02, y * 0.02, 3) * 7.0);
+        const r2 = Math.sin((x * 0.035 - y * 0.075) + tfbm(x * 0.015, y * 0.03, 2) * 5.0);
+        const ripple = r1 * 0.6 + r2 * 0.4;
+        const speck = ihash(x, y) > 0.9955 ? 1 : 0;
+        const dark = ihash(x + 7, y + 13) > 0.997 ? 1 : 0;
+
+        const v = 0.52 + grain * 0.22 + micro * 0.10 + ripple * 0.055 + speck * 0.34 - dark * 0.28;
+        ci.data[i] = M.clamp(198 * v + 44, 0, 255);
+        ci.data[i + 1] = M.clamp(170 * v + 34, 0, 255);
+        ci.data[i + 2] = M.clamp(130 * v + 24, 0, 255);
         ci.data[i + 3] = 255;
-        const hv = M.clamp((0.5 + grain * 0.4 + ripple * 0.35 + speck) * 255, 0, 255);
-        hi.data[i] = hi.data[i + 1] = hi.data[i + 2] = hv;
-        hi.data[i + 3] = 255;
+
+        const hv = M.clamp((0.5 + grain * 0.5 + micro * 0.35 + ripple * 0.30 + speck * 0.6) * 255, 0, 255);
+        hi.data[i] = hi.data[i + 1] = hi.data[i + 2] = hv; hi.data[i + 3] = 255;
+
+        // Små sten og skaller er blankere end selve sandet.
+        const rv = M.clamp((0.92 - speck * 0.45 - Math.max(0, micro) * 0.2) * 255, 0, 255);
+        ri.data[i] = ri.data[i + 1] = ri.data[i + 2] = rv; ri.data[i + 3] = 255;
       }
     }
-    cctx.putImageData(ci, 0, 0);
-    hctx.putImageData(hi, 0, 0);
-    return { color: col, normal: normalFromHeight(hgt, 2.2) };
+    col.getContext('2d').putImageData(ci, 0, 0);
+    hgt.getContext('2d').putImageData(hi, 0, 0);
+    rough.getContext('2d').putImageData(ri, 0, 0);
+    return { color: col, normal: normalFromHeight(hgt, 2.6), rough: rough };
   }
 
-  /* ---- Sandsten med vandrette lag ---- */
+  /* ---------- Sandsten ---------- */
   function rockMaps() {
     const S = 512;
-    const col = canvas(S);
-    const hgt = canvas(S);
-    const cctx = col.getContext('2d');
-    const hctx = hgt.getContext('2d');
-    const ci = cctx.createImageData(S, S);
-    const hi = hctx.createImageData(S, S);
+    const col = canvas(S), hgt = canvas(S), rough = canvas(S);
+    const ci = col.getContext('2d').createImageData(S, S);
+    const hi = hgt.getContext('2d').createImageData(S, S);
+    const ri = rough.getContext('2d').createImageData(S, S);
 
-    // Lagfarver — varme sandstenstoner som i en tør kløft. Færre og
-    // tykkere bånd, så klippen ikke ligner fløjlsbukser.
-    const bands = [];
-    for (let i = 0; i < 20; i++) {
-      bands.push({
-        y: i / 20,
-        tint: 0.86 + M.hash2(i * 1.7, 2.9) * 0.24,
-        warm: M.hash2(i * 5.1, 11.3)
+    // Bænke med hver sin tykkelse, farve og hårdhed.
+    const beds = [];
+    let yy = 0;
+    while (yy < 1) {
+      const t = 0.018 + ihash(beds.length * 13, 7) * 0.055;
+      beds.push({
+        y0: yy, y1: Math.min(1, yy + t),
+        tint: 0.80 + ihash(beds.length * 5, 11) * 0.42,
+        warm: ihash(beds.length * 3, 29),
+        hard: ihash(beds.length * 17, 5) > 0.45
       });
+      yy += t;
+    }
+    function bedAt(v) {
+      for (let i = 0; i < beds.length; i++) if (v >= beds[i].y0 && v < beds[i].y1) return beds[i];
+      return beds[beds.length - 1];
     }
 
     for (let y = 0; y < S; y++) {
-      const v = y / S;
-      let band = bands[0];
-      for (let i = 0; i < bands.length; i++) if (bands[i].y <= v) band = bands[i];
       for (let x = 0; x < S; x++) {
         const i = (y * S + x) * 4;
-        // Lagene bølger let, så de ikke ser tegnede ud.
-        const warp = M.fbm(x * 0.009, y * 0.035, 3) * 9.0;
-        const yy = y + warp;
-        const layer = Math.sin(yy * 0.22) * 0.5 + 0.5;
-        const fine = Math.sin(yy * 1.1) * 0.5 + 0.5;
-        const grain = M.fbm(x * 0.07, yy * 0.34, 4);
-        const crack = M.ridged(x * 0.03, yy * 0.016, 3);
-        // Lodret "desert varnish" der bryder det vandrette mønster.
-        const varnish = M.fbm(x * 0.05, yy * 0.006, 3) * 0.5 + 0.5;
-        const shade = 0.70 + layer * 0.13 + fine * 0.05 + grain * 0.13
-                    - Math.pow(crack, 3.0) * 0.28 - Math.pow(varnish, 2.5) * 0.16;
-        const tint = band.tint * shade;
-        ci.data[i] = M.clamp(198 * tint + 34, 0, 255);
-        ci.data[i + 1] = M.clamp(139 * tint * (0.92 + band.warm * 0.16) + 22, 0, 255);
-        ci.data[i + 2] = M.clamp(94 * tint * (0.82 + band.warm * 0.28) + 12, 0, 255);
+        // Lagene bølger, så de ikke ligner streger tegnet med lineal.
+        const warp = tfbm(x * 0.006, y * 0.02, 3) * 26 - 13;
+        const yy2 = y + warp;
+        const bed = bedAt(M.clamp(yy2 / S, 0, 0.999));
+
+        // Lamination inde i hver bænk.
+        const lam = Math.sin(yy2 * 0.9 + tfbm(x * 0.02, yy2 * 0.05, 2) * 6) * 0.5 + 0.5;
+        const grain = tfbm(x * 0.16, yy2 * 0.55, 4) - 0.5;
+        const crack = tridged(x * 0.045, yy2 * 0.022, 4);
+        // Lodret "desert varnish" der løber ned ad væggen.
+        const varnish = tfbm(x * 0.075, yy2 * 0.004, 3);
+        const pit = tridged(x * 0.5, yy2 * 0.5, 2);
+
+        const shade = 0.76 + lam * 0.17 + grain * 0.22
+                    - Math.pow(crack, 2.6) * 0.22
+                    - Math.pow(varnish, 3.0) * 0.22
+                    - Math.pow(pit, 8.0) * 0.10;
+        const tint = bed.tint * shade * (bed.hard ? 1.05 : 0.95);
+
+        ci.data[i] = M.clamp(206 * tint + 30, 0, 255);
+        ci.data[i + 1] = M.clamp(142 * tint * (0.90 + bed.warm * 0.20) + 20, 0, 255);
+        ci.data[i + 2] = M.clamp(92 * tint * (0.78 + bed.warm * 0.34) + 12, 0, 255);
         ci.data[i + 3] = 255;
-        const hv = M.clamp((0.45 + layer * 0.28 + fine * 0.12 + grain * 0.2
-                    - Math.pow(crack, 3.0) * 0.45) * 255, 0, 255);
-        hi.data[i] = hi.data[i + 1] = hi.data[i + 2] = hv;
-        hi.data[i + 3] = 255;
+
+        const hv = M.clamp((0.46 + lam * 0.22 + grain * 0.42
+                    - Math.pow(crack, 2.2) * 0.55 - Math.pow(pit, 6.0) * 0.4) * 255, 0, 255);
+        hi.data[i] = hi.data[i + 1] = hi.data[i + 2] = hv; hi.data[i + 3] = 255;
+
+        const rv = M.clamp(((bed.hard ? 0.72 : 0.94) + grain * 0.12 + Math.pow(crack, 2.2) * 0.2) * 255, 0, 255);
+        ri.data[i] = ri.data[i + 1] = ri.data[i + 2] = rv; ri.data[i + 3] = 255;
       }
     }
-    cctx.putImageData(ci, 0, 0);
-    hctx.putImageData(hi, 0, 0);
-    return { color: col, normal: normalFromHeight(hgt, 3.4) };
+    col.getContext('2d').putImageData(ci, 0, 0);
+    hgt.getContext('2d').putImageData(hi, 0, 0);
+    rough.getContext('2d').putImageData(ri, 0, 0);
+    return { color: col, normal: normalFromHeight(hgt, 4.2), rough: rough };
   }
 
-  /* ---- Græstot (alfa-tekstur til billboards) ---- */
+  /* ---------- Sten (småsten, nedfald, kampesten) ---------- */
+  // Sandsten i stort format duer ikke på en enkelt sten — lagene smører
+  // sig ud. Småsten får deres egen kornede tekstur.
+  function stoneMaps() {
+    const S = 256;
+    const col = canvas(S), hgt = canvas(S);
+    const ci = col.getContext('2d').createImageData(S, S);
+    const hi = hgt.getContext('2d').createImageData(S, S);
+    for (let y = 0; y < S; y++) {
+      for (let x = 0; x < S; x++) {
+        const i = (y * S + x) * 4;
+        const base = tfbm(x * 0.05, y * 0.05, 4);       // store pletter
+        const grain = tfbm(x * 0.6, y * 0.6, 3);        // korn
+        const fleck = ihash(x, y) > 0.988 ? 0.5 : 0;    // lyse krystaller
+        const dark = ihash(x + 3, y + 9) > 0.992 ? -0.35 : 0;
+        const crack = tridged(x * 0.12, y * 0.12, 3);
+        const v = 0.46 + (base - 0.5) * 0.42 + (grain - 0.5) * 0.30 + fleck + dark
+                - Math.pow(crack, 4.0) * 0.22;
+        const warm = 0.86 + base * 0.28;
+        ci.data[i] = M.clamp(196 * v * warm + 26, 0, 255);
+        ci.data[i + 1] = M.clamp(178 * v * (0.94 + base * 0.1) + 24, 0, 255);
+        ci.data[i + 2] = M.clamp(154 * v * 0.92 + 22, 0, 255);
+        ci.data[i + 3] = 255;
+        const hv = M.clamp((0.45 + (grain - 0.5) * 0.7 + fleck - Math.pow(crack, 4.0) * 0.6) * 255, 0, 255);
+        hi.data[i] = hi.data[i + 1] = hi.data[i + 2] = hv; hi.data[i + 3] = 255;
+      }
+    }
+    col.getContext('2d').putImageData(ci, 0, 0);
+    hgt.getContext('2d').putImageData(hi, 0, 0);
+    return { color: col, normal: normalFromHeight(hgt, 2.4) };
+  }
+
+  /* ---------- Fin detalje der lægges oven på alt ---------- */
+  function detailNormalMap() {
+    const S = 256;
+    const h = canvas(S);
+    const ctx = h.getContext('2d');
+    const img = ctx.createImageData(S, S);
+    for (let y = 0; y < S; y++) {
+      for (let x = 0; x < S; x++) {
+        const i = (y * S + x) * 4;
+        const v = tfbm(x * 1.7, y * 1.7, 3) * 0.6 + tnoise(x * 6.0, y * 6.0) * 0.4;
+        const c = M.clamp(v * 255, 0, 255);
+        img.data[i] = img.data[i + 1] = img.data[i + 2] = c;
+        img.data[i + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    return normalFromHeight(h, 1.6);
+  }
+
+  /* ---------- Storskala-variation (bryder gentagelsen) ---------- */
+  function macroMap() {
+    const S = 256;
+    const c = canvas(S);
+    const ctx = c.getContext('2d');
+    const img = ctx.createImageData(S, S);
+    for (let y = 0; y < S; y++) {
+      for (let x = 0; x < S; x++) {
+        const i = (y * S + x) * 4;
+        const v = 0.5 + (tfbm(x * 0.022, y * 0.022, 4) - 0.5) * 0.55;
+        img.data[i] = M.clamp(v * 262, 0, 255);
+        img.data[i + 1] = M.clamp(v * 254, 0, 255);
+        img.data[i + 2] = M.clamp(v * 242, 0, 255);
+        img.data[i + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    return c;
+  }
+
+  /* ---------- Græstot ---------- */
   function grassTexture() {
-    const W = 128, H = 128;
+    const W = 256, H = 256;
     const c = canvas(W, H);
     const ctx = c.getContext('2d');
     ctx.clearRect(0, 0, W, H);
     const rnd = M.mulberry32(9182);
-    // Bredt fæste og strå der bøjer udad — som de tørre totter langs vandet.
-    for (let i = 0; i < 40; i++) {
-      const x0 = 14 + rnd() * (W - 28);
+
+    for (let i = 0; i < 64; i++) {
+      const x0 = 22 + rnd() * (W - 44);
       const dir = x0 < W / 2 ? -1 : 1;
-      const lean = dir * (8 + rnd() * 42) * (0.4 + rnd());
-      const h = H * (0.34 + rnd() * 0.52);
-      const wBlade = 2.6 + rnd() * 3.4;
+      const lean = dir * (18 + rnd() * 92) * (0.4 + rnd() * 1.0);
+      const h = H * (0.30 + rnd() * 0.58);
+      const wBlade = 3.0 + rnd() * 5.0;
       const dry = rnd();
       const g = ctx.createLinearGradient(0, H, 0, H - h);
-      g.addColorStop(0, 'rgba(44,52,22,1)');
-      g.addColorStop(0.4, dry > 0.5 ? 'rgba(118,116,48,1)' : 'rgba(78,102,38,1)');
-      g.addColorStop(1, dry > 0.5 ? 'rgba(152,140,74,1)' : 'rgba(104,124,52,1)');
+      g.addColorStop(0, 'rgba(52,62,24,1)');
+      g.addColorStop(0.35, dry > 0.5 ? 'rgba(132,130,58,1)' : 'rgba(88,120,42,1)');
+      g.addColorStop(0.8, dry > 0.5 ? 'rgba(186,174,96,1)' : 'rgba(136,162,70,1)');
+      g.addColorStop(1, dry > 0.5 ? 'rgba(214,200,128,1)' : 'rgba(166,186,96,1)');
       ctx.strokeStyle = g;
       ctx.lineWidth = wBlade;
       ctx.lineCap = 'round';
       ctx.beginPath();
-      ctx.moveTo(x0, H + 4);
-      ctx.quadraticCurveTo(x0 + lean * 0.25, H - h * 0.62, x0 + lean, H - h);
+      ctx.moveTo(x0, H + 6);
+      ctx.quadraticCurveTo(x0 + lean * 0.22, H - h * 0.66, x0 + lean, H - h);
       ctx.stroke();
     }
+
+
     const t = new THREE.CanvasTexture(c);
     t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+    t.anisotropy = maxAniso;
+    t.encoding = THREE.sRGBEncoding;
     return t;
   }
 
-  /* ---- Blødt lys-punkt til ild, glimt og støv ---- */
+  /* ---------- Bølgenormaler ---------- */
+  function waterNormalMap() {
+    const S = 256;
+    const h = canvas(S);
+    const ctx = h.getContext('2d');
+    const img = ctx.createImageData(S, S);
+    for (let y = 0; y < S; y++) {
+      for (let x = 0; x < S; x++) {
+        const i = (y * S + x) * 4;
+        // Langstrakte krusninger i to retninger, som vind over stille vand.
+        const v = tfbm(x * 0.055, y * 0.11, 4) * 0.6
+                + tfbm(x * 0.19, y * 0.09, 3) * 0.4;
+        const c = M.clamp(v * 255, 0, 255);
+        img.data[i] = img.data[i + 1] = img.data[i + 2] = c;
+        img.data[i + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    return normalFromHeight(h, 2.1);
+  }
+
+  /* ---------- Skum til vandkanten ---------- */
+  function foamTexture() {
+    const S = 256;
+    const c = canvas(S);
+    const ctx = c.getContext('2d');
+    const img = ctx.createImageData(S, S);
+    for (let y = 0; y < S; y++) {
+      for (let x = 0; x < S; x++) {
+        const i = (y * S + x) * 4;
+        const v = tfbm(x * 0.09, y * 0.09, 4) * 0.65 + tfbm(x * 0.35, y * 0.35, 3) * 0.35;
+        const f = M.clamp((v - 0.34) * 3.4, 0, 1);
+        img.data[i] = img.data[i + 1] = img.data[i + 2] = f * 255;
+        img.data[i + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    return toTexture(c, 1, false);
+  }
+
+  /* ---------- Lyspunkter ---------- */
   function glowTexture(inner, outer) {
     const S = 128;
     const c = canvas(S);
@@ -588,23 +2941,130 @@
 
   let cache = null;
   O.textures = {
-    build: function () {
+    build: function (renderer) {
       if (cache) return cache;
+      if (renderer) maxAniso = Math.min(16, renderer.capabilities.getMaxAnisotropy());
       const sand = sandMaps();
       const rock = rockMaps();
+      const detail = detailNormalMap();
+      const stone = stoneMaps();
       cache = {
-        sand: toTexture(sand.color, 64),
-        sandNormal: toTexture(sand.normal, 64),
-        rock: toTexture(rock.color, 1),
+        sand: toTexture(sand.color, 56, true),
+        sandNormal: toTexture(sand.normal, 56),
+        sandRough: toTexture(sand.rough, 56),
+        rock: toTexture(rock.color, 1, true),
         rockNormal: toTexture(rock.normal, 1),
+        rockRough: toTexture(rock.rough, 1),
+        detailNormal: toTexture(detail, 1),
+        stone: toTexture(stone.color, 2, true),
+        stoneNormal: toTexture(stone.normal, 2),
+        macro: toTexture(macroMap(), 1),
         grass: grassTexture(),
+        foam: foamTexture(),
+        waterNormal: toTexture(waterNormalMap(), 1),
         glow: glowTexture(),
         spark: glowTexture('rgba(255,255,255,1)', 'rgba(200,230,255,0.5)')
       };
-      cache.sand.encoding = THREE.sRGBEncoding;
-      cache.rock.encoding = THREE.sRGBEncoding;
-      cache.grass.encoding = THREE.sRGBEncoding;
       return cache;
+    }
+  };
+})();
+
+</script>
+<script>
+/* ---- src/25-shaderlib.js ---- */
+/* ------------------------------------------------------------------
+   Små indgreb i three.js' standardmateriale.
+
+   To detaljer flytter mest: et ekstra normalkort i høj tæthed oven på
+   det store (så overflader har både grov og fin struktur), og våd
+   overflade, hvor sandet tæt på vandet bliver blankt.
+   ------------------------------------------------------------------ */
+(function () {
+  const O = window.OASIS;
+
+  const patches = [];
+
+  function chain(mat, fn, key) {
+    const prev = mat.onBeforeCompile;
+    mat.onBeforeCompile = function (shader, renderer) {
+      if (prev) prev(shader, renderer);
+      fn(shader);
+    };
+    mat.userData.shaderKey = (mat.userData.shaderKey || '') + '|' + key;
+    mat.customProgramCacheKey = function () { return mat.userData.shaderKey; };
+  }
+
+  O.shaderlib = {
+    // Fin detalje-struktur oven på det almindelige normalkort.
+    detailNormal: function (mat, texture, scale, strength) {
+      const uniforms = {
+        tDetailNormal: { value: texture },
+        uDetailScale: { value: scale },
+        uDetailStrength: { value: strength }
+      };
+      mat.userData.detail = uniforms;
+      chain(mat, function (shader) {
+        shader.uniforms.tDetailNormal = uniforms.tDetailNormal;
+        shader.uniforms.uDetailScale = uniforms.uDetailScale;
+        shader.uniforms.uDetailStrength = uniforms.uDetailStrength;
+        shader.fragmentShader =
+          'uniform sampler2D tDetailNormal;\nuniform float uDetailScale;\nuniform float uDetailStrength;\n' +
+          shader.fragmentShader.replace(
+            '#include <normal_fragment_maps>',
+            `vec3 mapN = texture2D( normalMap, vUv ).xyz * 2.0 - 1.0;
+             vec3 detN = texture2D( tDetailNormal, vUv * uDetailScale ).xyz * 2.0 - 1.0;
+             mapN.xy = mapN.xy * normalScale + detN.xy * uDetailStrength;
+             normal = perturbNormal2Arb( -vViewPosition, normal, mapN, faceDirection );`
+          );
+      }, 'detail');
+      return mat;
+    },
+
+    // Vådhed: en vertex-attribut styrer hvor blank og mørk overfladen er.
+    // Det er dét, der giver den våde bræmme langs vandkanten.
+    wetness: function (mat, maxGloss) {
+      chain(mat, function (shader) {
+        shader.vertexShader =
+          'attribute float aWet;\nvarying float vWet;\n' +
+          shader.vertexShader.replace('#include <begin_vertex>',
+            '#include <begin_vertex>\n  vWet = aWet;');
+        shader.fragmentShader =
+          'varying float vWet;\n' +
+          shader.fragmentShader
+            .replace('#include <roughnessmap_fragment>',
+              `#include <roughnessmap_fragment>
+               roughnessFactor = mix( roughnessFactor, ${(maxGloss || 0.5).toFixed(3)}, vWet );`)
+            .replace('#include <metalnessmap_fragment>',
+              `#include <metalnessmap_fragment>
+               diffuseColor.rgb *= mix( 1.0, 0.80, vWet );`);
+      }, 'wet');
+      return mat;
+    },
+
+    // Storskala-variation: en langsom støjtekstur der bryder gentagelsen
+    // i den lille tekstur, så sandet ikke ser ud som tapet.
+    macroVariation: function (mat, texture, scale, strength) {
+      const uniforms = {
+        tMacro: { value: texture },
+        uMacroScale: { value: scale },
+        uMacroStrength: { value: strength }
+      };
+      mat.userData.macro = uniforms;
+      chain(mat, function (shader) {
+        shader.uniforms.tMacro = uniforms.tMacro;
+        shader.uniforms.uMacroScale = uniforms.uMacroScale;
+        shader.uniforms.uMacroStrength = uniforms.uMacroStrength;
+        shader.fragmentShader =
+          'uniform sampler2D tMacro;\nuniform float uMacroScale;\nuniform float uMacroStrength;\n' +
+          shader.fragmentShader.replace(
+            '#include <map_fragment>',
+            `#include <map_fragment>
+             vec3 macro = texture2D( tMacro, vUv * uMacroScale ).rgb;
+             diffuseColor.rgb *= mix( vec3(1.0), macro * 1.9, uMacroStrength );`
+          );
+      }, 'macro');
+      return mat;
     }
   };
 })();
@@ -613,8 +3073,12 @@
 <script>
 /* ---- src/30-terrain.js ---- */
 /* ------------------------------------------------------------------
-   Terrænet: sandbred, flodleje og kløftbund som ét stort mesh med
-   vertexfarver (våd sand, tør sand, grus, grønt bånd langs vandet).
+   Terrænet: sandbred, flodleje og kløftbund.
+
+   Farven ligger i vertexfarver (tør sand, grus, våd bræmme, alger i
+   flodlejet), mens en ekstra attribut fortæller materialet hvor vådt
+   sandet er — våd sand er både mørkere og blank, og det er dét, der
+   får vandkanten til at se rigtig ud.
    ------------------------------------------------------------------ */
 (function () {
   const O = window.OASIS;
@@ -624,60 +3088,76 @@
     const wl = O.config.waterLevel;
     const lush = O.world.lushness(x, z, h);
     const grit = M.fbm(x * 0.11, z * 0.11, 3);
+    const patch = M.fbm(x * 0.03 + 12, z * 0.03 - 7, 3);
 
-    // Tør sand som udgangspunkt, med lidt variation i lyshed.
-    let r = 1.06 + grit * 0.10;
-    let g = 1.00 + grit * 0.08;
-    let b = 0.90 + grit * 0.06;
+    // Tør sand med langsom variation i lyshed og varme.
+    let r = 1.00 + grit * 0.09 + patch * 0.10;
+    let g = 0.94 + grit * 0.07 + patch * 0.07;
+    let b = 0.83 + grit * 0.05 + patch * 0.04;
 
-    // Grus- og lerplamager på den tørre kløftbund.
-    const gravel = M.smoothstep(0.35, 0.75, M.fbm(x * 0.045 + 40, z * 0.045 - 20, 3)) * M.smoothstep(0.8, 2.6, h);
-    r = M.lerp(r, 0.88, gravel); g = M.lerp(g, 0.74, gravel); b = M.lerp(b, 0.60, gravel);
+    // Grus og hærdet ler på den tørre kløftbund.
+    const gravel = M.smoothstep(0.34, 0.78, M.fbm(x * 0.045 + 40, z * 0.045 - 20, 3)) * M.smoothstep(0.7, 2.4, h);
+    r = M.lerp(r, 0.80, gravel); g = M.lerp(g, 0.67, gravel); b = M.lerp(b, 0.54, gravel);
 
-    // Fugtigt sand tættest på vandet — mørkere og mere mættet.
-    const wet = 1 - M.smoothstep(-0.05, 0.62, h - wl);
-    r = M.lerp(r, 0.52, wet); g = M.lerp(g, 0.44, wet); b = M.lerp(b, 0.36, wet);
+    // Fugtigt sand er en bræmme LANGS kanten. Under vandet må sandet ikke
+    // gøres mørkt her — det klarer vandets egen absorption, og gør man det
+    // to gange, ender det lave vand med at se ud som mudder.
+    const wet = (1 - M.smoothstep(-0.02, 0.36, h - wl)) * M.smoothstep(-0.5, -0.02, h - wl);
+    r = M.lerp(r, 0.55, wet); g = M.lerp(g, 0.45, wet); b = M.lerp(b, 0.33, wet);
 
-    // Alger og mudder på bunden af floden.
-    const bed = M.smoothstep(0.15, 1.6, wl - h);
-    r = M.lerp(r, 0.40, bed); g = M.lerp(g, 0.40, bed); b = M.lerp(b, 0.31, bed);
+    // Først på dybere vand kommer alger og slam til.
+    const bed = M.smoothstep(0.55, 2.4, wl - h);
+    r = M.lerp(r, 0.44, bed); g = M.lerp(g, 0.44, bed); b = M.lerp(b, 0.32, bed);
 
-    // Det grønne bånd hvor græsset gror.
-    const green = lush * 0.55;
-    r = M.lerp(r, 0.44, green); g = M.lerp(g, 0.52, green); b = M.lerp(b, 0.26, green);
+    // Det grønne bånd langs vandet.
+    const green = lush * 0.5;
+    r = M.lerp(r, 0.40, green); g = M.lerp(g, 0.47, green); b = M.lerp(b, 0.24, green);
 
     out.r = r; out.g = g; out.b = b;
+    // Vådt sand er en bræmme LANGS vandkanten. Under vandet skal det ikke
+    // være blankt — der ligger jo en vandoverflade ovenpå, og et spejlblankt
+    // bundsand er præcis dét, der giver den mælkede dis på det lave vand.
+    out.wet = M.clamp((1 - M.smoothstep(-0.02, 0.34, h - wl))
+                      * M.smoothstep(-0.32, -0.02, h - wl) * 0.95, 0, 1);
   }
 
   O.buildTerrain = function (scene, tex) {
     const size = O.config.worldSize;
-    const seg = 220;
+    const seg = 260;
     const geo = new THREE.PlaneGeometry(size, size, seg, seg);
     geo.rotateX(-Math.PI / 2);
 
     const pos = geo.attributes.position;
     const colors = new Float32Array(pos.count * 3);
-    const c = { r: 0, g: 0, b: 0 };
+    const wet = new Float32Array(pos.count);
+    const c = { r: 0, g: 0, b: 0, wet: 0 };
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i), z = pos.getZ(i);
-      const h = O.world.height(x, z);
+      let h = O.world.height(x, z);
+      // Lidt ekstra finkornet variation nu hvor gitteret er tættere.
+      h += M.fbm(x * 0.55, z * 0.55, 2) * 0.035;
       pos.setY(i, h);
       colorAt(x, z, h, c);
-      colors[i * 3] = c.r;
-      colors[i * 3 + 1] = c.g;
-      colors[i * 3 + 2] = c.b;
+      colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
+      wet[i] = c.wet;
     }
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geo.setAttribute('aWet', new THREE.BufferAttribute(wet, 1));
     geo.computeVertexNormals();
 
     const mat = new THREE.MeshStandardMaterial({
       map: tex.sand,
       normalMap: tex.sandNormal,
-      normalScale: new THREE.Vector2(0.65, 0.65),
+      normalScale: new THREE.Vector2(0.55, 0.55),
+      roughnessMap: tex.sandRough,
       vertexColors: true,
-      roughness: 0.96,
-      metalness: 0.0
+      roughness: 1.0,
+      metalness: 0.0,
+      envMapIntensity: 0.7
     });
+    O.shaderlib.detailNormal(mat, tex.detailNormal, 6.0, 0.30);
+    O.shaderlib.macroVariation(mat, tex.macro, 0.030, 0.35);
+    O.shaderlib.wetness(mat, 0.45);
 
     const mesh = new THREE.Mesh(geo, mat);
     mesh.receiveShadow = true;
@@ -691,164 +3171,233 @@
 <script>
 /* ---- src/40-cliffs.js ---- */
 /* ------------------------------------------------------------------
-   Kløften: lagdelte sandstensklipper bygget som stablede "skiver",
-   præcis den stratificerede look fra referencen. Hver klippe får
-   en simpel cylinder-collider, så man ikke kan gå igennem den.
+   Kløftens vægge.
+
+   Hver formation bygges som et indekseret gitter rundt om en lodret akse
+   (kolonner = vej rundt, rækker = op ad væggen). Radius bestemmes af tre
+   ting: en uregelmæssig grundform, en trappeprofil med sandstenslag, og
+   erosion — lodrette render og vandrette udhulinger. Fordi gitteret er
+   indekseret, bliver normalerne bløde, og stenen ser ud som sten i stedet
+   for som papkasser.
    ------------------------------------------------------------------ */
 (function () {
   const O = window.OASIS;
   const M = O.math;
 
-  // Byg én mesa som en stak uregelmæssige prismer med afsatser.
-  // Få sider + kraftig hjørnevariation giver den kantede mesa-silhuet;
-  // radius aftager kun ganske lidt opad, så den ikke bliver kegleformet.
-  function mesaGeometry(rnd, opts) {
-    const pos = [];
-    const uv = [];
-    const col = [];
+  // --- Én formation ---------------------------------------------------
+  function mesaGeometry(rnd, opt) {
+    const R = opt.radius;
+    const cols = opt.cols;
 
-    const sides = opts.sides;
-    const layers = opts.layers;
-    const twist = rnd() * Math.PI * 2;
-
-    // Grundform: hvert hjørne har sin egen radius, så omridset bliver kantet.
-    const shape = [];
-    for (let i = 0; i < sides; i++) {
-      const a = (i / sides) * Math.PI * 2;
-      shape.push(0.70 + M.fbm(Math.cos(a) * 2.4 + opts.sx, Math.sin(a) * 2.4 + opts.sz, 3) * 0.42 + rnd() * 0.22);
+    // Grundform: få, brede buler giver en kantet, men blød silhuet.
+    const lobes = [];
+    const nLobes = 3 + (rnd() * 4 | 0);
+    for (let i = 0; i < nLobes; i++) {
+      lobes.push({ k: 1 + (rnd() * 4 | 0), amp: (0.06 + rnd() * 0.16) / nLobes * 2.2, ph: rnd() * 6.28 });
+    }
+    function outline(a) {
+      let s = 1;
+      for (const l of lobes) s += Math.sin(a * l.k + l.ph) * l.amp;
+      return s;
     }
 
-    let y = 0;
-    let radius = opts.radius;
-    const rings = [];
-    for (let l = 0; l < layers; l++) {
-      const thick = opts.layerMin + rnd() * (opts.layerMax - opts.layerMin);
-      rings.push({ y: y, r: radius, thick: thick });
-      y += thick;
-      // Næsten lodret væg, men med enkelte markante hylder og udhæng.
-      let shrink = 1 - 0.004 - rnd() * 0.014;
+    // Et par store "bid" ud af siden — kløfter og nedstyrtede partier.
+    const bites = [];
+    for (let i = 0, n = rnd() < 0.7 ? 1 + (rnd() * 2 | 0) : 0; i < n; i++) {
+      bites.push({ a: rnd() * 6.28, w: 0.35 + rnd() * 0.5, d: 0.10 + rnd() * 0.16,
+                   y0: rnd() * 0.5, y1: 0.5 + rnd() * 0.6 });
+    }
+
+    // Lagene: skiftevis hård bænk (bred) og blød bænk (trukket tilbage).
+    const beds = [];
+    let y = 0, r = 1;
+    while (y < opt.height) {
+      const thick = opt.bedMin + rnd() * (opt.bedMax - opt.bedMin);
+      let inset = 0.002 + rnd() * 0.010;
       const roll = rnd();
-      if (roll < 0.10) shrink = 1 - 0.07 - rnd() * 0.10;   // bred afsats
-      else if (roll < 0.18) shrink = 1 + 0.008 + rnd() * 0.02; // udhæng
-      radius *= shrink;
+      if (roll < 0.11) inset = 0.035 + rnd() * 0.055;     // markant afsats
+      else if (roll < 0.21) inset = -0.008 - rnd() * 0.022; // udhæng
+      beds.push({ y0: y, y1: Math.min(y + thick, opt.height), r: r, hard: rnd() < 0.55 });
+      r *= (1 - inset);
+      y += thick;
     }
-    const totalH = y;
+    const H = beds[beds.length - 1].y1;
 
-    // Lodret erosion: radius varierer lidt med højden, så væggen ikke er en glat prisme.
-    function erode(i, yy) {
-      return 1
-        + M.fbm(i * 1.31 + opts.sx, yy * 0.09 + opts.sz, 3) * 0.14
-        + M.fbm(i * 2.7 + opts.sz, yy * 0.42, 2) * 0.05;
-    }
-
-    function corner(i, ring, r) {
-      const a = twist + (i / sides) * Math.PI * 2;
-      const rr = r * shape[i % sides] * erode(i, ring.y);
-      return [Math.cos(a) * rr, ring.y, Math.sin(a) * rr];
-    }
-
-    function push(p, u, v, shade) {
-      pos.push(p[0], p[1], p[2]);
-      uv.push(u, v);
-      col.push(shade[0], shade[1], shade[2]);
+    // Rækker: to tætte rækker ved hver laggrænse (skarp hylde) plus et par
+    // mellemrækker inde i laget (så erosionen har noget at forme).
+    const rows = [];
+    rows.push({ y: -opt.skirt, r: beds[0].r * 1.06, bed: 0 });   // fod nede i sandet
+    for (let i = 0; i < beds.length; i++) {
+      const b = beds[i];
+      const inner = Math.max(1, Math.round((b.y1 - b.y0) / opt.rowStep));
+      for (let j = 0; j <= inner; j++) {
+        rows.push({ y: b.y0 + (b.y1 - b.y0) * (j / inner), r: b.r, bed: i });
+      }
+      const next = beds[i + 1];
+      if (next) rows.push({ y: b.y1 + 0.05, r: next.r, bed: i + 1 });   // selve hylden
     }
 
-    for (let l = 0; l < rings.length; l++) {
-      const ring = rings[l];
-      const topY = ring.y + ring.thick;
-      const topR = ring.r * (0.994 + rnd() * 0.012);
+    const nRows = rows.length;
+    const pos = new Float32Array(cols * nRows * 3);
+    const uv = new Float32Array(cols * nRows * 2);
+    const col = new Float32Array(cols * nRows * 3);
 
-      // Farvebånd pr. lag — okker, rust og lys sand, men holdt tæt på hinanden.
-      const band = 0.93 + M.hash2(l * 2.7 + opts.sx, l * 1.3) * 0.13;
-      const warm = 0.94 + M.hash2(l * 5.1, opts.sz) * 0.14;
-      const shade = [band * 1.02, band * 0.96 * warm, band * 0.88 * warm];
-      const shelf = [shade[0] * 1.10, shade[1] * 1.10, shade[2] * 1.08];
-      const under = [shade[0] * 0.62, shade[1] * 0.60, shade[2] * 0.58];
+    // Erosion: lodrette render (høj frekvens rundt, lav op ad) plus grov ruhed.
+    function erode(a, yy) {
+      const gully = M.ridged(Math.cos(a) * 4.2 + opt.sx, Math.sin(a) * 4.2 + yy * 0.045, 3);
+      const rough = M.fbm(Math.cos(a) * 2.1 + opt.sx, Math.sin(a) * 2.1 + yy * 0.16, 4);
+      const fine = M.fbm(Math.cos(a) * 7.5, Math.sin(a) * 7.5 + yy * 0.55, 3);
+      return { g: gully, r: rough, f: fine };
+    }
 
-      const next = rings[l + 1];
-      const nr = next ? next.r : topR * 0.94;
+    const rads = new Float32Array(cols);
+    const us = new Float32Array(cols);
 
-      for (let i = 0; i < sides; i++) {
-        const i2 = (i + 1) % sides;
-        const a0 = corner(i, ring, ring.r);
-        const a1 = corner(i2, ring, ring.r);
-        const b0 = corner(i, { y: topY }, topR);
-        const b1 = corner(i2, { y: topY }, topR);
+    for (let j = 0; j < nRows; j++) {
+      const row = rows[j];
+      const yy = row.y;
+      const hgt = M.clamp(yy / H, 0, 1);
+      const bed = beds[row.bed] || beds[0];
+      // Farvebånd: hårde bænke er lysere og mere gule, bløde mere rustne.
+      const tone = bed.hard ? 1.03 : 0.95;
+      const warm = 0.96 + M.hash2(row.bed * 3.1 + opt.sx, row.bed * 1.7) * 0.10;
 
-        // UV følger den fysiske størrelse, så lagene har samme skala overalt.
-        const seg = Math.hypot(a1[0] - a0[0], a1[2] - a0[2]);
-        const u0 = (i * 3.7) % 1.0;
-        const u1 = u0 + seg * 0.030;
-        const v0 = ring.y * 0.028, v1 = topY * 0.028;
-
-        // Omløbsretning mod uret set udefra, så fladerne (og normalerne)
-        // vender ud af klippen.
-        push(a0, u0, v0, shade); push(b0, u0, v1, shade); push(b1, u1, v1, shade);
-        push(a0, u0, v0, shade); push(b1, u1, v1, shade); push(a1, u1, v0, shade);
-
-        const k = nr / topR;
-        const c0 = [b0[0] * k, topY, b0[2] * k];
-        const c1 = [b1[0] * k, topY, b1[2] * k];
-        if (Math.abs(nr - topR) > 0.02) {
-          // Den vandrette flade mellem to lag: en hylde når laget ovenover er
-          // smallere, og undersiden af et udhæng når det er bredere. Samme
-          // omløbsretning klarer begge — normalen vender af sig selv.
-          const tone = nr < topR ? shelf : under;
-          push(b0, u0, v1, tone); push(c1, u1, v1 + 0.14, tone); push(b1, u1, v1, tone);
-          push(b0, u0, v1, tone); push(c0, u0, v1 + 0.14, tone); push(c1, u1, v1 + 0.14, tone);
+      // Først radius hele vejen rundt …
+      for (let i = 0; i < cols; i++) {
+        const a = (i / cols) * Math.PI * 2;
+        const e = erode(a, yy);
+        let rad = R * row.r * outline(a);
+        rad *= 1 + (e.r - 0.5) * 0.11 + (e.f - 0.5) * 0.04;
+        rad -= R * 0.08 * Math.pow(e.g, 1.6) * (0.3 + hgt * 1.0);   // render skærer sig ned
+        for (const bt of bites) {
+          const da = Math.abs(((a - bt.a + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+          const inA = 1 - M.smoothstep(0, bt.w, da);
+          const inY = M.smoothstep(bt.y0 - 0.12, bt.y0 + 0.05, hgt) * (1 - M.smoothstep(bt.y1 - 0.05, bt.y1 + 0.15, hgt));
+          rad -= R * bt.d * inA * inY;
         }
+        rads[i] = Math.max(0.35, rad);
+      }
+
+      // … derefter buelængden rundt om rækken, så teksturen ikke forskydes.
+      let arc = 0;
+      for (let i = 0; i < cols; i++) {
+        const i2 = (i + 1) % cols;
+        const a1 = (i / cols) * Math.PI * 2, a2 = (i2 / cols) * Math.PI * 2;
+        us[i] = arc;
+        arc += Math.hypot(Math.cos(a2) * rads[i2] - Math.cos(a1) * rads[i],
+                          Math.sin(a2) * rads[i2] - Math.sin(a1) * rads[i]);
+      }
+      // Rund af til et helt antal fliser, så sømmen ikke ses.
+      const tiles = Math.max(1, Math.round(arc * 0.052));
+      const uScale = tiles / Math.max(arc, 0.001);
+
+      for (let i = 0; i < cols; i++) {
+        const a = (i / cols) * Math.PI * 2;
+        const e = erode(a, yy);
+        const rad = rads[i];
+        const k = (j * cols + i);
+        pos[k * 3] = Math.cos(a) * rad;
+        pos[k * 3 + 1] = yy;
+        pos[k * 3 + 2] = Math.sin(a) * rad;
+
+        uv[k * 2] = us[i] * uScale;
+        uv[k * 2 + 1] = (yy + opt.uvOffset) * 0.050;
+
+        // Vertexfarven bærer lagfarve og en enkel skyggeeffekt: render og
+        // sprækker er mørkere, foden er mørkere, toppen er solbleget.
+        const ao = 1
+          - 0.32 * Math.pow(e.g, 1.4)
+          - 0.24 * (1 - M.smoothstep(0, 6, yy))
+          - 0.10 * (1 - e.r);
+        const bleach = 0.05 * M.smoothstep(0.75, 1.0, hgt);
+        col[k * 3] = tone * ao * 1.02 + bleach;
+        col[k * 3 + 1] = tone * ao * 0.955 * warm + bleach;
+        col[k * 3 + 2] = tone * ao * 0.865 * warm + bleach * 0.9;
       }
     }
 
-    // Fladt tag med plan UV-projektion (ellers får man ringe som en skydeskive).
-    const topRing = rings[rings.length - 1];
-    const ty = topRing.y + topRing.thick;
-    const tr = topRing.r * 0.94;
-    const shadeTop = [0.94, 0.89, 0.80];
-    const uvScale = 0.03;
-    for (let i = 0; i < sides; i++) {
-      const i2 = (i + 1) % sides;
-      const p0 = corner(i, { y: ty }, tr);
-      const p1 = corner(i2, { y: ty }, tr);
-      // Toppen hæves kun i midten, så den bulder let uden at der opstår
-      // sprækker mod sidevæggens øverste ring.
-      const c = [0, ty + 0.4 + M.fbm(opts.sx, opts.sz, 2) * 1.4, 0];
-      push(c, c[0] * uvScale + 0.5, c[2] * uvScale + 0.5, shadeTop);
-      push(p1, p1[0] * uvScale + 0.5, p1[2] * uvScale + 0.5, shadeTop);
-      push(p0, p0[0] * uvScale + 0.5, p0[2] * uvScale + 0.5, shadeTop);
+    // Indeksering af gitteret + en flad, eroderet top.
+    const idx = [];
+    for (let j = 0; j < nRows - 1; j++) {
+      for (let i = 0; i < cols; i++) {
+        const i2 = (i + 1) % cols;
+        const a = j * cols + i, b = j * cols + i2;
+        const c = (j + 1) * cols + i2, d = (j + 1) * cols + i;
+        idx.push(a, d, c, a, c, b);
+      }
     }
 
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-    g.computeVertexNormals();
-    g.userData.height = totalH;
-    return g;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+
+    // Toppen lægges på som et separat, ikke-indekseret stykke, så kanten
+    // mellem væg og tag bliver skarp.
+    const topPos = [], topUv = [], topCol = [], topNor = [];
+    const last = (nRows - 1) * cols;
+    const cy = H + 0.15 + M.fbm(opt.sx, opt.sz, 2) * 0.6;
+    for (let i = 0; i < cols; i++) {
+      const i2 = (i + 1) % cols;
+      const p0 = [pos[(last + i) * 3], pos[(last + i) * 3 + 1], pos[(last + i) * 3 + 2]];
+      const p1 = [pos[(last + i2) * 3], pos[(last + i2) * 3 + 1], pos[(last + i2) * 3 + 2]];
+      const c0 = [0, cy, 0];
+      const shade = [1.0, 0.95, 0.86];
+      const tri = [c0, p1, p0];
+      for (const v of tri) {
+        topPos.push(v[0], v[1], v[2]);
+        topUv.push(v[0] * 0.03 + 0.5, v[2] * 0.03 + 0.5);
+        topCol.push(shade[0], shade[1], shade[2]);
+        topNor.push(0, 1, 0);
+      }
+    }
+    const topGeo = new THREE.BufferGeometry();
+    topGeo.setAttribute('position', new THREE.Float32BufferAttribute(topPos, 3));
+    topGeo.setAttribute('uv', new THREE.Float32BufferAttribute(topUv, 2));
+    topGeo.setAttribute('color', new THREE.Float32BufferAttribute(topCol, 3));
+    topGeo.setAttribute('normal', new THREE.Float32BufferAttribute(topNor, 3));
+
+    geo.userData = { height: H, top: topGeo };
+    return geo;
   }
 
-  // Sammenflet flere geometrier til ét mesh (færre draw calls).
-  function merge(list) {
-    let n = 0;
-    for (const g of list) n += g.attributes.position.count;
-    const pos = new Float32Array(n * 3);
-    const nor = new Float32Array(n * 3);
-    const uv = new Float32Array(n * 2);
-    const col = new Float32Array(n * 3);
-    let o = 0;
+  // Fletter alt til to buffere (indekseret væg + løs top) i ét mesh.
+  function mergeAll(list) {
+    let vcount = 0, icount = 0;
     for (const g of list) {
-      const c = g.attributes.position.count;
-      pos.set(g.attributes.position.array, o * 3);
-      nor.set(g.attributes.normal.array, o * 3);
-      uv.set(g.attributes.uv.array, o * 2);
-      col.set(g.attributes.color.array, o * 3);
-      o += c;
+      vcount += g.attributes.position.count;
+      icount += g.index ? g.index.count : g.attributes.position.count;
+    }
+    const pos = new Float32Array(vcount * 3);
+    const nor = new Float32Array(vcount * 3);
+    const uv = new Float32Array(vcount * 2);
+    const col = new Float32Array(vcount * 3);
+    const idx = (vcount > 65535) ? new Uint32Array(icount) : new Uint16Array(icount);
+    let vo = 0, io = 0;
+    for (const g of list) {
+      const n = g.attributes.position.count;
+      pos.set(g.attributes.position.array, vo * 3);
+      nor.set(g.attributes.normal.array, vo * 3);
+      uv.set(g.attributes.uv.array, vo * 2);
+      col.set(g.attributes.color.array, vo * 3);
+      if (g.index) {
+        const gi = g.index.array;
+        for (let i = 0; i < gi.length; i++) idx[io + i] = gi[i] + vo;
+        io += gi.length;
+      } else {
+        for (let i = 0; i < n; i++) idx[io + i] = vo + i;
+        io += n;
+      }
+      vo += n;
     }
     const out = new THREE.BufferGeometry();
-    out.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-    out.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
-    out.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-    out.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+    out.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    out.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    out.setIndex(new THREE.BufferAttribute(idx, 1));
     out.computeBoundingSphere();
     return out;
   }
@@ -857,103 +3406,109 @@
     const rnd = M.mulberry32(O.config.seed + 77);
     const parts = [];
     const placed = [];
+    const screePoints = [];
 
-    function tryPlace(x, z, radius, layers, sides, minDist) {
-      for (const p of placed) {
-        const d = Math.hypot(p.x - x, p.z - z);
-        if (d < (p.r + radius) * (minDist || 0.92)) return false;
+    function place(x, z, radius, height, opts) {
+      opts = opts || {};
+      if (!opts.overlap) {
+        for (const p of placed) {
+          if (Math.hypot(p.x - x, p.z - z) < (p.r + radius) * (opts.spacing || 0.9)) return false;
+        }
       }
+      // Detaljegrad efter afstand til oasen — tæt på skal det holde til
+      // at man står med næsen i klippen.
+      const dist = Math.hypot(x, z * 0.7);
+      const near = dist < 95;
+      const mid = dist < 150;
+      const cols = near ? 56 : mid ? 34 : 20;
+      const rowStep = near ? 1.0 : mid ? 2.0 : 3.4;
+
       const g = mesaGeometry(rnd, {
         radius: radius,
-        layers: layers,
-        sides: sides,
-        sx: x * 0.11,
-        sz: z * 0.11,
-        layerMin: 0.7 + rnd() * 0.5,
-        layerMax: 1.8 + rnd() * 1.8
+        height: height,
+        cols: cols,
+        rowStep: rowStep,
+        bedMin: 0.8 + rnd() * 0.5,
+        bedMax: 1.9 + rnd() * 1.9,
+        skirt: 2.5,
+        sx: x * 0.07,
+        sz: z * 0.07,
+        uvOffset: (x * 0.31 + z * 0.17) % 7
       });
-      // Sæt den lidt ned i terrænet så der ikke er luft under kanten.
-      const base = O.world.height(x, z) - 1.2;
+      const base = O.world.height(x, z) - 0.35;
+      const top = g.userData.top;
       g.translate(x, base, z);
-      parts.push(g);
-      placed.push({ x: x, z: z, r: radius, h: base + g.userData.height });
-      O.world.colliders.push({ x: x, z: z, r: radius * 0.86, top: base + g.userData.height });
+      top.translate(x, base, z);
+      parts.push(g, top);
+      placed.push({ x: x, z: z, r: radius });
+      O.world.colliders.push({ x: x, z: z, r: radius * 0.88, top: base + g.userData.height });
+      if (near) screePoints.push({ x: x, z: z, r: radius });
       return true;
     }
 
-    // 1) Kløftvæggene: to lange rækker af høje klipper langs floden.
+    // 1) Kløftens to vægge langs floden.
     for (let side = -1; side <= 1; side += 2) {
-      for (let i = 0; i < 26; i++) {
-        const t = i / 25;
-        const z = M.lerp(190, -200, t) + (rnd() - 0.5) * 16;
-        // Find flodens x på den her z-værdi ved at søge langs rygraden.
-        let sx = 0;
-        let best = Infinity;
+      for (let i = 0; i < 24; i++) {
+        const t = i / 23;
+        const z = M.lerp(190, -200, t) + (rnd() - 0.5) * 14;
+        let sx = 0, best = Infinity;
         for (const p of O.world.spine) {
           const d = Math.abs(p.z - z);
           if (d < best) { best = d; sx = p.x; }
         }
-        const dist = 58 + rnd() * 38;
-        const x = sx + side * dist;
-        tryPlace(x, z, 26 + rnd() * 26, 9 + (rnd() * 9 | 0), 6 + (rnd() * 4 | 0), 0.72);
+        const x = sx + side * (56 + rnd() * 34);
+        place(x, z, 24 + rnd() * 24, 20 + rnd() * 26, { spacing: 0.78 });
       }
     }
 
-    // 2) Fritstående mesaer tættere på vandet — dem man ser spejlet.
-    for (let i = 0; i < 22; i++) {
+    // 2) Fritstående mesaer tættere på vandet — dem der spejler sig.
+    for (let i = 0; i < 20; i++) {
       const ang = rnd() * Math.PI * 2;
-      const rad = 34 + rnd() * 30;
-      const x = Math.cos(ang) * rad + (rnd() - 0.5) * 40;
-      const z = Math.sin(ang) * rad * 1.6 + (rnd() - 0.5) * 60;
+      const rad = 34 + rnd() * 28;
+      const x = Math.cos(ang) * rad + (rnd() - 0.5) * 36;
+      const z = Math.sin(ang) * rad * 1.7 + (rnd() - 0.5) * 60;
       const r = O.world.river(x, z);
-      if (r.d < r.w + 8) continue;              // ikke midt i floden
-      tryPlace(x, z, 9 + rnd() * 15, 5 + (rnd() * 7 | 0), 6 + (rnd() * 4 | 0));
+      if (r.d < r.w + 7) continue;
+      place(x, z, 8 + rnd() * 12, 9 + rnd() * 16);
     }
 
-    // 3) Store klippeblokke i kanten af vandet.
-    for (let i = 0; i < 16; i++) {
+    // 3) Lave klippehylder helt nede ved vandkanten.
+    for (let i = 0; i < 18; i++) {
       const ang = rnd() * Math.PI * 2;
-      const rad = 26 + rnd() * 26;
+      const rad = 24 + rnd() * 26;
       const x = Math.cos(ang) * rad * 1.2;
-      const z = Math.sin(ang) * rad * 2.2;
+      const z = Math.sin(ang) * rad * 2.1;
       const r = O.world.river(x, z);
-      if (r.d < r.w + 1) continue;
-      tryPlace(x, z, 2.4 + rnd() * 4.8, 4 + (rnd() * 5 | 0), 7 + (rnd() * 3 | 0));
+      if (r.d < r.w + 0.5) continue;
+      place(x, z, 2.6 + rnd() * 5, 1.6 + rnd() * 4.5, { spacing: 0.8 });
     }
 
-    // 4) Fjern klipperand hele vejen rundt, så man aldrig ser terrænets
-    //    kant. Her må formationerne gerne overlappe — det er én lang væg.
-    for (let i = 0; i < 52; i++) {
-      const a = (i / 52) * Math.PI * 2 + (rnd() - 0.5) * 0.05;
-      const rad = 128 + rnd() * 30;
-      const x = Math.cos(a) * rad;
-      const z = Math.sin(a) * rad * 1.25;
-      const radius = 26 + rnd() * 22;
-      const g = mesaGeometry(rnd, {
-        radius: radius, layers: 10 + (rnd() * 10 | 0), sides: 6 + (rnd() * 3 | 0),
-        sx: x * 0.11, sz: z * 0.11,
-        layerMin: 1.0 + rnd() * 0.6, layerMax: 2.2 + rnd() * 2.0
-      });
-      const base = O.world.height(x, z) - 2.0;
-      g.translate(x, base, z);
-      parts.push(g);
-      O.world.colliders.push({ x: x, z: z, r: radius * 0.8, top: base + g.userData.height });
+    // 4) Randen der lukker horisonten. Her må de gerne skære ind i hinanden.
+    for (let i = 0; i < 54; i++) {
+      const a = (i / 54) * Math.PI * 2 + (rnd() - 0.5) * 0.05;
+      const rad = 126 + rnd() * 32;
+      place(Math.cos(a) * rad, Math.sin(a) * rad * 1.25, 26 + rnd() * 22, 24 + rnd() * 26, { overlap: true });
     }
 
-    const geo = merge(parts);
+    const geo = mergeAll(parts);
     const mat = new THREE.MeshStandardMaterial({
       map: tex.rock,
       normalMap: tex.rockNormal,
-      normalScale: new THREE.Vector2(1.1, 1.1),
+      normalScale: new THREE.Vector2(1.15, 1.15),
+      roughnessMap: tex.rockRough,
       vertexColors: true,
-      roughness: 0.92,
-      metalness: 0.0
+      roughness: 1.0,
+      metalness: 0.0,
+      envMapIntensity: 0.9
     });
+    O.shaderlib.detailNormal(mat, tex.detailNormal, 9.0, 0.45);
     const mesh = new THREE.Mesh(geo, mat);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     mesh.name = 'cliffs';
     scene.add(mesh);
+
+    O.screePoints = screePoints;
     return mesh;
   };
 })();
@@ -962,8 +3517,12 @@
 <script>
 /* ---- src/50-sky.js ---- */
 /* ------------------------------------------------------------------
-   Himmel og lys: gradient-kuppel med tynde cirrusskyer, varm morgensol
-   med skygger, og et blødt fyldlys fra sandet.
+   Himmel, lys og miljørefleksion.
+
+   Himlen tegnes med en analytisk model (Rayleigh-agtig gradient, mie-glød
+   om solen, solskive og to lag skyer) og bruges bagefter til at bage et
+   miljøkort. Dermed får alle materialer i scenen lys fra hele himmelkuplen
+   og ikke bare fra én lyskilde — det er dét, der giver klipperne dybde.
    ------------------------------------------------------------------ */
 (function () {
   const O = window.OASIS;
@@ -971,7 +3530,7 @@
   const SKY_VERT = `
     varying vec3 vDir;
     void main() {
-      vDir = normalize(position);
+      vDir = position;
       gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
     }
   `;
@@ -980,6 +3539,7 @@
     varying vec3 vDir;
     uniform vec3 uSun;
     uniform float uTime;
+    uniform float uCloudy;
 
     float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
     float noise(vec2 p){
@@ -988,53 +3548,75 @@
       return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x),
                  mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
     }
-    float fbm(vec2 p){
+    float fbm(vec2 p, int oct){
       float v = 0.0, a = 0.5;
-      for (int i = 0; i < 5; i++) { v += a * noise(p); p *= 2.07; a *= 0.5; }
+      for (int i = 0; i < 6; i++) {
+        if (i >= oct) break;
+        v += a * noise(p); p = p * 2.03 + vec2(1.7, -3.1); a *= 0.5;
+      }
       return v;
     }
 
     void main() {
       vec3 dir = normalize(vDir);
-      float h = clamp(dir.y, -1.0, 1.0);
+      vec3 sun = normalize(uSun);
+      float h = dir.y;
+      float mu = dot(dir, sun);
 
-      vec3 zenith  = vec3(0.20, 0.42, 0.80);
-      vec3 mid     = vec3(0.47, 0.66, 0.90);
-      vec3 horizon = vec3(0.86, 0.87, 0.86);
+      // Grundgradient: dyb blå i zenit, lys dis ved horisonten. Eksponenten
+      // gør overgangen tættere på en rigtig atmosfære end en lineær rampe.
+      float t = pow(clamp(h * 0.5 + 0.5, 0.0, 1.0), 1.0);
+      vec3 zenith  = vec3(0.085, 0.230, 0.560);
+      vec3 middle  = vec3(0.330, 0.545, 0.850);
+      vec3 horizon = vec3(0.760, 0.815, 0.880);
+      float k = clamp(h, 0.0, 1.0);
+      vec3 col = mix(horizon, middle, smoothstep(0.0, 0.22, pow(k, 0.62)));
+      col = mix(col, zenith, smoothstep(0.16, 0.92, pow(k, 0.55)));
 
-      float t = pow(clamp(h, 0.0, 1.0), 0.55);
-      vec3 col = mix(horizon, mid, smoothstep(0.0, 0.34, t));
-      col = mix(col, zenith, smoothstep(0.30, 1.0, t));
+      // Mie-spredning: den varme glød i en bred kegle omkring solen.
+      float mie = pow(max(mu, 0.0), 6.0);
+      col += vec3(0.95, 0.68, 0.42) * mie * 0.22;
+      col += vec3(1.00, 0.80, 0.58) * pow(max(mu, 0.0), 60.0) * 0.55;
 
-      // Cirrusskyer: strakte striber der driver langsomt.
-      vec2 uv = dir.xz / max(0.12, abs(dir.y) + 0.28);
-      uv *= vec2(0.55, 1.7);
-      uv += vec2(uTime * 0.0035, uTime * 0.0012);
-      float warp = fbm(uv * 0.5);
-      float streak = fbm(uv * vec2(1.2, 3.4) + warp * 1.4);
-      float clouds = smoothstep(0.52, 0.82, streak) * smoothstep(0.02, 0.28, h);
-      float wispy = smoothstep(0.44, 0.95, fbm(uv * vec2(2.6, 7.0) + warp)) * clouds;
-      col = mix(col, vec3(1.0, 0.99, 0.98), clouds * 0.55 + wispy * 0.35);
+      // Solskiven. Kanten er blød, så bloom kan tage over.
+      float disc = smoothstep(0.99955, 0.99985, mu);
+      col += vec3(1.0, 0.94, 0.82) * disc * 9.0;
 
-      // Solskive og halo.
-      float sd = max(dot(dir, normalize(uSun)), 0.0);
-      col += vec3(1.0, 0.85, 0.62) * pow(sd, 220.0) * 4.0;
-      col += vec3(1.0, 0.78, 0.52) * pow(sd, 8.0) * 0.28;
+      // Skyer i to lag: høje cirrus-striber og et tyndere slør nedenunder,
+      // begge projiceret på en flad "himmelplade" så de flader ud mod horisonten.
+      vec2 uv = dir.xz / max(0.06, h + 0.14);
+      vec2 cir = uv * vec2(0.30, 0.95) + vec2(uTime * 0.0028, uTime * 0.0009);
+      float warp = fbm(cir * 0.55, 4);
+      float streak = fbm(cir * vec2(0.9, 3.1) + warp * 1.7, 5);
+      float cirrus = smoothstep(0.50, 0.86, streak);
+      float fine = smoothstep(0.42, 0.95, fbm(cir * vec2(2.2, 6.4) + warp * 1.2, 4));
 
-      // Dis nede ved horisonten.
-      col = mix(col, vec3(0.90, 0.88, 0.84), smoothstep(0.09, -0.10, h));
+      vec2 vel = uv * 0.16 + vec2(uTime * 0.0012, uTime * 0.0006);
+      float veil = smoothstep(0.55, 0.95, fbm(vel, 5)) * 0.5;
+
+      float mask = smoothstep(0.015, 0.30, h) * uCloudy;
+      float clouds = (cirrus * 0.62 + fine * 0.30 + veil * 0.35) * mask;
+
+      // Skyerne er lysest på den side der vender mod solen.
+      vec3 cloudCol = mix(vec3(0.93, 0.94, 0.96), vec3(1.0, 0.97, 0.92), max(mu, 0.0));
+      col = mix(col, cloudCol, clamp(clouds, 0.0, 0.92));
+
+      // Dis og støv langs horisonten.
+      col = mix(col, vec3(0.86, 0.83, 0.78), smoothstep(0.10, -0.06, h));
+      col = mix(col, vec3(0.80, 0.74, 0.66), smoothstep(-0.02, -0.30, h));
 
       gl_FragColor = vec4(col, 1.0);
     }
   `;
 
-  O.buildSky = function (scene) {
+  O.buildSky = function (scene, renderer) {
     const s = O.config.sunDirection;
     const sun = new THREE.Vector3(s.x, s.y, s.z).normalize();
 
     const uniforms = {
       uSun: { value: sun },
-      uTime: { value: 0 }
+      uTime: { value: 0 },
+      uCloudy: { value: 1.0 }
     };
     const mat = new THREE.ShaderMaterial({
       vertexShader: SKY_VERT,
@@ -1044,43 +3626,72 @@
       depthWrite: false,
       fog: false
     });
-    const mesh = new THREE.Mesh(new THREE.SphereGeometry(900, 48, 32), mat);
+    const mesh = new THREE.Mesh(new THREE.SphereGeometry(900, 64, 40), mat);
     mesh.frustumCulled = false;
     mesh.renderOrder = -1000;
     scene.add(mesh);
 
-    // --- Lys ---
-    const sunLight = new THREE.DirectionalLight(O.srgb(0xfff1d8), 2.35);
-    sunLight.position.copy(sun).multiplyScalar(120);
+    /* ---- Miljøkort bagt fra himlen (IBL) ---- */
+    // Uden det bliver alt i skyggen ensfarvet gråt. Med det får sand og
+    // klipper himlens farve ovenfra og sandets varme tone nedefra.
+    let envMap = null;
+    if (renderer) {
+      const pmrem = new THREE.PMREMGenerator(renderer);
+      pmrem.compileEquirectangularShader();
+      const envScene = new THREE.Scene();
+      const envSky = new THREE.Mesh(new THREE.SphereGeometry(10, 32, 20), mat);
+      envSky.geometry.scale(-1, 1, 1);   // vi ser den indefra
+      envScene.add(envSky);
+      // En stor, sandfarvet "jordflade" så bouncet nedefra er varmt.
+      const ground = new THREE.Mesh(
+        new THREE.SphereGeometry(9.5, 16, 12, 0, Math.PI * 2, Math.PI * 0.5, Math.PI * 0.5),
+        new THREE.MeshBasicMaterial({ color: O.srgb(0xb08a5e), side: THREE.BackSide })
+      );
+      envScene.add(ground);
+      const target = pmrem.fromScene(envScene, 0.02);
+      envMap = target.texture;
+      scene.environment = envMap;
+      envSky.geometry.dispose();
+      ground.geometry.dispose();
+      pmrem.dispose();
+    }
+
+    /* ---- Sollys ---- */
+    const sunLight = new THREE.DirectionalLight(O.srgb(0xfff2dc), 2.70);
+    sunLight.position.copy(sun).multiplyScalar(180);
     sunLight.castShadow = true;
-    sunLight.shadow.mapSize.set(2048, 2048);
-    const d = 96;
+    sunLight.shadow.mapSize.set(4096, 4096);
+    const d = 130;   // bred nok til at klippernes skygger også falder på hinanden
     sunLight.shadow.camera.left = -d;
     sunLight.shadow.camera.right = d;
     sunLight.shadow.camera.top = d;
     sunLight.shadow.camera.bottom = -d;
     sunLight.shadow.camera.near = 1;
-    sunLight.shadow.camera.far = 320;
-    sunLight.shadow.bias = -0.0009;
+    sunLight.shadow.camera.far = 420;
+    sunLight.shadow.bias = -0.0006;
     sunLight.shadow.normalBias = 0.35;
     scene.add(sunLight);
     scene.add(sunLight.target);
 
-    // Himmel- og sandbounce, så skyggerne ikke bliver sorte huller.
-    const hemi = new THREE.HemisphereLight(O.srgb(0x9ec1f5), O.srgb(0xd8a978), 0.85);
+    // Skyggefyld. I virkeligheden er en skygge ikke sort — den er belyst
+    // af den blå himmelkuppel ovenfra og af varmt lys kastet tilbage fra
+    // sandet. Uden de to bliver alt i skygge rødbrunt og dødt.
+    const hemi = new THREE.HemisphereLight(O.srgb(0xc3dbfb), O.srgb(0xd0a878), 0.80);
     scene.add(hemi);
 
-    // Varmt modlys fra sandet, så skyggerne ikke bliver kolde og blå.
-    const bounce = new THREE.DirectionalLight(O.srgb(0xffcf9a), 0.55);
-    bounce.position.set(-sun.x * 60, 22, -sun.z * 60);
+    const bounce = new THREE.DirectionalLight(O.srgb(0xffd9ae), 0.25);
+    bounce.position.set(-sun.x * 60, 14, -sun.z * 60);
     scene.add(bounce);
 
-    const ambient = new THREE.AmbientLight(O.srgb(0x9a7f5e), 0.35);
+    const ambient = new THREE.AmbientLight(O.srgb(0x9b8f7c), 0.18);
     scene.add(ambient);
 
-    scene.fog = new THREE.FogExp2(O.srgb(0xcfc7b6), 0.0034);
+    scene.fog = new THREE.FogExp2(O.srgb(0xd3cec4), 0.0042);
 
-    return { mesh: mesh, uniforms: uniforms, sun: sun, light: sunLight, hemi: hemi };
+    return {
+      mesh: mesh, uniforms: uniforms, sun: sun,
+      light: sunLight, bounce: bounce, hemi: hemi, ambient: ambient, envMap: envMap
+    };
   };
 })();
 
@@ -1088,14 +3699,18 @@
 <script>
 /* ---- src/60-water.js ---- */
 /* ------------------------------------------------------------------
-   Vandet. Ægte plan-spejling (scenen renderes en ekstra gang fra et
-   spejlvendt kamera), krusninger, dybdefarve og solglimt.
+   Vandet.
+
+   Tre ting bygger billedet op: en spejling (scenen renderes igen fra et
+   kamera spejlet i overfladen), en brydning (scenen uden vand, forskudt
+   af bølgerne, så man ser sten og grus nede i det lave vand), og et bagt
+   dybdekort, der styrer hvor meget lys der bliver slugt undervejs.
+   Oveni ligger skum langs kanten og solglimt på krusningerne.
    ------------------------------------------------------------------ */
 (function () {
   const O = window.OASIS;
   const M = O.math;
 
-  // Bag et dybdekort ud fra terrænet, så vandet ved hvor lavt der er.
   function bakeDepthTexture(res) {
     const size = O.config.worldSize;
     const data = new Uint8Array(res * res * 4);
@@ -1103,11 +3718,10 @@
       const z = (j / (res - 1) - 0.5) * size;
       for (let i = 0; i < res; i++) {
         const x = (i / (res - 1) - 0.5) * size;
-        const h = O.world.height(x, z);
-        const depth = O.config.waterLevel - h;
+        const depth = O.config.waterLevel - O.world.height(x, z);
         const k = (j * res + i) * 4;
-        data[k] = M.clamp(depth / 3.0, 0, 1) * 255;        // dybde
-        data[k + 1] = M.clamp((depth + 0.25) / 0.5, 0, 1) * 255; // blød vandkant
+        data[k] = M.clamp(depth / 3.0, 0, 1) * 255;
+        data[k + 1] = M.clamp((depth + 0.4) / 0.8, 0, 1) * 255;
         data[k + 2] = 255;
         data[k + 3] = 255;
       }
@@ -1125,12 +3739,14 @@
     uniform mat4 uTextureMatrix;
     varying vec4 vReflectCoord;
     varying vec3 vWorld;
+    varying vec4 vScreen;
     void main() {
       vec4 world = modelMatrix * vec4(position, 1.0);
       vWorld = world.xyz;
       vReflectCoord = uTextureMatrix * world;
       vec4 mvPosition = viewMatrix * world;
       gl_Position = projectionMatrix * mvPosition;
+      vScreen = gl_Position;
       #include <fog_vertex>
     }
   `;
@@ -1138,40 +3754,31 @@
   const FRAG = `
     #include <common>
     #include <fog_pars_fragment>
+
     uniform sampler2D uReflect;
+    uniform sampler2D uRefract;
     uniform sampler2D uDepthMap;
+    uniform sampler2D uNormalMap;
+    uniform sampler2D uFoam;
     uniform float uTime;
     uniform float uWorldSize;
     uniform vec3 uSun;
     uniform vec3 uSunColor;
     uniform vec3 uCamPos;
+    uniform float uDebug;
     varying vec4 vReflectCoord;
+    varying vec4 vScreen;
     varying vec3 vWorld;
 
-    float hash21(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-    float vnoise(vec2 p){
-      vec2 i = floor(p), f = fract(p);
-      vec2 u = f * f * (3.0 - 2.0 * f);
-      return mix(mix(hash21(i), hash21(i + vec2(1.0, 0.0)), u.x),
-                 mix(hash21(i + vec2(0.0, 1.0)), hash21(i + vec2(1.0, 1.0)), u.x), u.y);
+    // Store dønninger som få sinusser — de bærer den langsomme bevægelse.
+    float swell(vec2 p) {
+      return sin(p.x * 0.30 + p.y * 0.21 + uTime * 0.75) * 0.55
+           + sin(p.x * -0.23 + p.y * 0.47 + uTime * 0.95) * 0.40;
     }
 
-    // Sum af krusninger — billigt, men giver den rigtige uro på fladen.
-    float waveHeight(vec2 p, float detail) {
-      float h = 0.0;
-      h += sin(p.x * 0.42 + p.y * 0.28 + uTime * 0.9) * 0.55;
-      h += sin(p.x * -0.31 + p.y * 0.63 + uTime * 1.15) * 0.42;
-      h += sin(p.x * 0.93 - p.y * 0.71 + uTime * 1.9) * 0.20 * detail;
-      h += sin(p.x * 1.71 + p.y * 1.42 + uTime * 2.6) * 0.11 * detail;
-      h += sin(p.x * 3.10 - p.y * 2.60 + uTime * 3.4) * 0.05 * detail;
-      return h;
-    }
-
-    vec3 waveNormal(vec2 p, float detail, float scale) {
-      float e = 0.35;
-      float hx = waveHeight(p + vec2(e, 0.0), detail) - waveHeight(p - vec2(e, 0.0), detail);
-      float hz = waveHeight(p + vec2(0.0, e), detail) - waveHeight(p - vec2(0.0, e), detail);
-      return normalize(vec3(-hx * scale, 1.0, -hz * scale));
+    vec3 sampleNormal(vec2 p, float scale, vec2 drift) {
+      vec3 n = texture2D(uNormalMap, p * scale + drift * uTime).xyz * 2.0 - 1.0;
+      return n;
     }
 
     void main() {
@@ -1181,81 +3788,125 @@
       if (depth <= 0.004) discard;
 
       float dist = length(uCamPos - vWorld);
-      float detail = 1.0 - smoothstep(18.0, 90.0, dist);   // dæmp fine bølger langt væk
-      vec3 n = waveNormal(vWorld.xz, detail, 0.16 + 0.10 * detail);
+      float detail = 1.0 - smoothstep(22.0, 120.0, dist);
+
+      // Krusninger i tre lag der driver hver sin vej — det er dét, der
+      // gør fladen levende i stedet for regelmæssig.
+      vec3 n1 = sampleNormal(vWorld.xz, 0.055, vec2(0.004, 0.0026));
+      vec3 n2 = sampleNormal(vWorld.xz, 0.145, vec2(-0.0032, 0.0045));
+      vec3 n3 = sampleNormal(vWorld.xz, 0.420, vec2(0.0075, -0.0060));
+      vec2 ripple = n1.xy * 0.75 + n2.xy * 0.5 * detail + n3.xy * 0.28 * detail;
+
+      float e = 0.6;
+      vec2 sw = vec2(swell(vWorld.xz + vec2(e, 0.0)) - swell(vWorld.xz - vec2(e, 0.0)),
+                     swell(vWorld.xz + vec2(0.0, e)) - swell(vWorld.xz - vec2(0.0, e)));
+
+      // Krusningerne dæmpes inde på det lave vand. Hældningerne skal holdes
+      // små — stille vand er nærmest et spejl, og selv få graders ekstra
+      // hældning ødelægger både spejlingen og fresnel-effekten.
+      float shallowDamp = smoothstep(0.02, 0.45, depth);
+      vec3 n = normalize(vec3(-(ripple.x * 0.10 + sw.x * 0.045) * shallowDamp,
+                              1.0,
+                              -(ripple.y * 0.10 + sw.y * 0.045) * shallowDamp));
 
       vec3 viewDir = normalize(uCamPos - vWorld);
-      float fres = pow(1.0 - clamp(dot(viewDir, n), 0.0, 1.0), 4.0);
-      fres = mix(0.03, 1.0, fres);
+      float ndv = clamp(dot(viewDir, n), 0.0, 1.0);
+      float fres = 0.02 + 0.98 * pow(1.0 - ndv, 5.0);
 
-      // Spejlingen forskydes af krusningerne — mindre på det lave vand.
-      float distort = mix(0.008, 0.055, smoothstep(0.0, 1.2, depth));
+      // --- Brydning: bunden set gennem vandet ---
+      vec2 screenUv = (vScreen.xy / vScreen.w) * 0.5 + 0.5;
+      float refrAmt = mix(0.004, 0.030, smoothstep(0.0, 1.4, depth)) * (0.4 + 0.6 * detail);
+      vec3 bottom = texture2D(uRefract, clamp(screenUv + n.xz * refrAmt, 0.002, 0.998)).rgb;
+
+      // Lyset slukkes med dybden, og vandet får sin egen farve.
+      // Rødt lys forsvinder først, men langsomt — vandet er klart, og man
+      // skal kunne se sandet ligge lige under overfladen.
+      vec3 absorb = vec3(0.36, 0.10, 0.05);
+      vec3 trans = exp(-absorb * depth * 1.1);
+      vec3 scatter = mix(vec3(0.06, 0.15, 0.15), vec3(0.02, 0.08, 0.13), smoothstep(0.5, 2.6, depth));
+      vec3 body = bottom * trans + scatter * (1.0 - trans);
+
+      // Kaustik: bølgerne samler sollys i lyse bånd på bunden.
+      float caus = swell(vWorld.xz * 1.9 + n.xz * 3.0) + texture2D(uNormalMap, vWorld.xz * 0.09 + uTime * vec2(0.006, 0.004)).z;
+      caus = pow(clamp(caus * 0.45 + 0.35, 0.0, 1.0), 5.0);
+      body += uSunColor * caus * 0.55 * (1.0 - smoothstep(0.05, 1.6, depth)) * trans;
+
+      // --- Spejling ---
+      float distort = mix(0.006, 0.045, smoothstep(0.0, 1.2, depth));
       vec2 ruv = vReflectCoord.xy / max(vReflectCoord.w, 0.0001);
       ruv += n.xz * distort;
-      vec3 reflection = texture2D(uReflect, clamp(ruv, 0.001, 0.999)).rgb;
-
-      // Bunden set gennem vandet. Den bliver "spist" af dybden, så det
-      // lave vand er sandfarvet og det dybe grønblåt.
-      vec2 bedUv = vWorld.xz + n.xz * 1.6;          // svag brydning
-      float bedGrain = vnoise(bedUv * 1.7) * 0.35 + vnoise(bedUv * 0.35) * 0.3;
-      vec3 bedColor = vec3(0.60, 0.50, 0.36) * (0.72 + bedGrain);
-
-      // Kaustik: lysnet fra bølgerne der samler sig på bunden.
-      float caus = waveHeight(vWorld.xz * 1.15 + n.xz * 2.0, detail);
-      caus = pow(clamp(caus * 0.5 + 0.6, 0.0, 1.0), 4.0);
-      bedColor += vec3(1.0, 0.92, 0.72) * caus * 0.34 * (1.0 - smoothstep(0.2, 2.0, depth));
-
-      float extinction = exp(-depth * 1.05);
-      vec3 tint = mix(vec3(0.30, 0.44, 0.38), vec3(0.05, 0.15, 0.20), smoothstep(0.5, 2.4, depth));
-      vec3 body = mix(tint, bedColor, extinction);
+      vec3 reflection = texture2D(uReflect, clamp(ruv, 0.002, 0.998)).rgb;
 
       vec3 col = mix(body, reflection, fres);
 
-      // Solglimt.
+      // --- Solglimt ---
       vec3 hvec = normalize(normalize(uSun) + viewDir);
-      float spec = pow(max(dot(n, hvec), 0.0), 220.0);
-      col += uSunColor * spec * 1.6;
-      col += uSunColor * pow(max(dot(n, hvec), 0.0), 22.0) * 0.06;
+      float ndh = max(dot(n, hvec), 0.0);
+      col += uSunColor * pow(ndh, 700.0) * 3.0;
+      col += uSunColor * pow(ndh, 60.0) * 0.07;
 
-      // Blød vandkant, så bredden ikke skæres over af en hård linje.
-      float edge = smoothstep(0.0, 0.12, depth);
-      float alpha = mix(0.35, 0.97, edge);
+      // --- Skum langs vandkanten ---
+      float edge = 1.0 - smoothstep(0.0, 0.05, depth);
+      float band = sin(depth * 90.0 - uTime * 1.4 + swell(vWorld.xz * 2.0) * 2.0) * 0.5 + 0.5;
+      float foamTex = texture2D(uFoam, vWorld.xz * 0.7 + n.xz * 0.05 + uTime * vec2(0.004, 0.003)).r;
+      float foam = clamp(edge * (0.35 + 0.65 * band) * smoothstep(0.35, 0.8, foamTex), 0.0, 1.0);
+      col = mix(col, vec3(0.88, 0.87, 0.83), foam * 0.4);
 
-      gl_FragColor = vec4(col, alpha);
+      float alpha = mix(0.45, 0.98, smoothstep(0.0, 0.14, depth));
+      alpha = max(alpha, foam * 0.55);
+
+      if (uDebug > 1.5) { gl_FragColor = vec4(reflection, 1.0); }
+      else if (uDebug > 0.5) { gl_FragColor = vec4(bottom, 1.0); }
+      else { gl_FragColor = vec4(col, alpha); }
+      #include <tonemapping_fragment>
       #include <fog_fragment>
     }
   `;
 
   O.buildWater = function (scene, renderer, camera, sky) {
     const size = O.config.worldSize;
-    const geo = new THREE.PlaneGeometry(size, size, 96, 96);
+    const geo = new THREE.PlaneGeometry(size, size, 128, 128);
     geo.rotateX(-Math.PI / 2);
 
-    const pixelRatio = Math.min(window.devicePixelRatio, 2);
-    const rtW = Math.floor(window.innerWidth * pixelRatio * 0.5);
-    const rtH = Math.floor(window.innerHeight * pixelRatio * 0.5);
-    const renderTarget = new THREE.WebGLRenderTarget(rtW, rtH, {
-      minFilter: THREE.LinearFilter,
-      magFilter: THREE.LinearFilter,
-      format: THREE.RGBAFormat,
-      encoding: THREE.sRGBEncoding
-    });
+    const tex = O.textures.build();
+    const pr = Math.min(window.devicePixelRatio, 2);
+    // Hjælpebillederne gemmes uden tonekurve, så de skal kunne rumme værdier
+    // over 1 — i en almindelig 8-bit buffer ville himmel og solbelyst klippe
+    // blive klippet til hvidt, og vandet ville se ud som mælk.
+    const hdr = renderer.capabilities.isWebGL2;
+    function makeTarget(scale) {
+      const rt = new THREE.WebGLRenderTarget(
+        Math.max(2, Math.floor(window.innerWidth * pr * scale)),
+        Math.max(2, Math.floor(window.innerHeight * pr * scale)),
+        { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
+          format: THREE.RGBAFormat, encoding: THREE.LinearEncoding,
+          type: hdr ? THREE.HalfFloatType : THREE.UnsignedByteType }
+      );
+      rt.userData = { scale: scale };
+      return rt;
+    }
+    const reflectRT = makeTarget(0.55);
+    const refractRT = makeTarget(0.42);
 
     const uniforms = THREE.UniformsUtils.merge([
       THREE.UniformsLib.fog,
       {
-        uReflect: { value: null },
-        uDepthMap: { value: null },
+        uReflect: { value: null }, uRefract: { value: null },
+        uDepthMap: { value: null }, uNormalMap: { value: null }, uFoam: { value: null },
         uTextureMatrix: { value: new THREE.Matrix4() },
         uTime: { value: 0 },
         uWorldSize: { value: size },
         uSun: { value: new THREE.Vector3() },
-        uSunColor: { value: new THREE.Color(1.0, 0.92, 0.78) },
-        uCamPos: { value: new THREE.Vector3() }
+        uSunColor: { value: new THREE.Color(1.0, 0.93, 0.80) },
+        uCamPos: { value: new THREE.Vector3() },
+        uDebug: { value: 0 }
       }
     ]);
-    uniforms.uReflect.value = renderTarget.texture;
+    uniforms.uReflect.value = reflectRT.texture;
+    uniforms.uRefract.value = refractRT.texture;
     uniforms.uDepthMap.value = bakeDepthTexture(512);
+    uniforms.uNormalMap.value = tex.waterNormal;
+    uniforms.uFoam.value = tex.foam;
     uniforms.uSun.value = sky.sun.clone();
 
     const mat = new THREE.ShaderMaterial({
@@ -1283,10 +3934,28 @@
     const rotation = new THREE.Matrix4();
     const texMatrix = new THREE.Matrix4();
 
-    function updateReflection(scene, hideList) {
+    function update(scene, hideList, doRefract) {
+      // Begge hjælpebilleder skal være scene-refererede: tonekurven må først
+      // lægges på til allersidst, når vandets egen farve er blandet i.
+      const oldTone = renderer.toneMapping;
+      if (hdr) renderer.toneMapping = THREE.NoToneMapping;
+
+      const restore = [];
+      mesh.visible = false;
+      for (const obj of hideList) { restore.push([obj, obj.visible]); obj.visible = false; }
+
+      // 1) Brydning: scenen som den ser ud gennem overfladen. Står man
+      //    langt fra vandet, ser man alligevel kun spejlingen — så springes
+      //    hele det ekstra pas over.
+      if (doRefract !== false) {
+        renderer.setRenderTarget(refractRT);
+        renderer.clear();
+        renderer.render(scene, camera);
+      }
+
+      // 2) Spejling.
       view.subVectors(mirrorPos, camera.position);
       view.reflect(normal).negate().add(mirrorPos);
-
       rotation.extractRotation(camera.matrixWorld);
       lookAt.set(0, 0, -1).applyMatrix4(rotation).add(camera.position);
       target.subVectors(mirrorPos, lookAt);
@@ -1295,10 +3964,10 @@
       reflectCam.position.copy(view);
       reflectCam.up.set(0, 1, 0).applyMatrix4(rotation).reflect(normal);
       reflectCam.lookAt(target);
+      reflectCam.near = camera.near;
       reflectCam.far = camera.far;
       reflectCam.fov = camera.fov;
       reflectCam.aspect = camera.aspect;
-      reflectCam.near = camera.near;
       reflectCam.updateMatrixWorld();
       reflectCam.updateProjectionMatrix();
 
@@ -1307,36 +3976,27 @@
       texMatrix.multiply(reflectCam.matrixWorldInverse);
       uniforms.uTextureMatrix.value.copy(texMatrix);
 
-      const restore = [];
-      mesh.visible = false;
-      for (const obj of hideList) { restore.push([obj, obj.visible]); obj.visible = false; }
-
-      const currentXR = renderer.xr.enabled;
-      renderer.xr.enabled = false;
-      renderer.setRenderTarget(renderTarget);
+      renderer.setRenderTarget(reflectRT);
       renderer.clear();
       renderer.render(scene, reflectCam);
-      renderer.setRenderTarget(null);
-      renderer.xr.enabled = currentXR;
 
+      renderer.setRenderTarget(null);
+      renderer.toneMapping = oldTone;
       mesh.visible = true;
       for (const [obj, v] of restore) obj.visible = v;
     }
 
     function resize() {
-      const pr = Math.min(window.devicePixelRatio, 2);
-      renderTarget.setSize(
-        Math.max(2, Math.floor(window.innerWidth * pr * 0.5)),
-        Math.max(2, Math.floor(window.innerHeight * pr * 0.5))
-      );
+      const p = Math.min(window.devicePixelRatio, 2);
+      for (const rt of [reflectRT, refractRT]) {
+        rt.setSize(
+          Math.max(2, Math.floor(window.innerWidth * p * rt.userData.scale)),
+          Math.max(2, Math.floor(window.innerHeight * p * rt.userData.scale))
+        );
+      }
     }
 
-    return {
-      mesh: mesh,
-      uniforms: uniforms,
-      update: updateReflection,
-      resize: resize
-    };
+    return { mesh: mesh, uniforms: uniforms, update: update, resize: resize };
   };
 })();
 
@@ -1344,8 +4004,12 @@
 <script>
 /* ---- src/70-props.js ---- */
 /* ------------------------------------------------------------------
-   Detaljerne der gør stedet levende: græstotter i vindstød, siv,
-   drivtømmer, kampesten, støv i luften og et bål på den anden bred.
+   Alt det små, der gør landskabet troværdigt: græs i klynger, buske,
+   nedfaldsklippe ved kløftens fod, småsten og grus i sandet, drivtømmer,
+   bål og støv i luften.
+
+   Alt tegnes med instanser — hver gruppe koster ét kald, uanset om der
+   er hundrede eller tyve tusind af dem.
    ------------------------------------------------------------------ */
 (function () {
   const O = window.OASIS;
@@ -1370,161 +4034,291 @@
     return out;
   }
 
-  function crossQuad() {
-    const a = new THREE.PlaneGeometry(1, 1).translate(0, 0.5, 0);
-    const b = new THREE.PlaneGeometry(1, 1).translate(0, 0.5, 0);
-    b.rotateY(Math.PI / 2);
-    const c = new THREE.PlaneGeometry(1, 1).translate(0, 0.5, 0);
-    c.rotateY(Math.PI / 4);
-    const g = mergeNonIndexed([a, b, c]);
-    // Normaler peger opad som på rigtigt løv — ellers bliver hvert blad
-    // enten helt sort eller helt udbrændt alt efter hvilken vej det står.
+  // Tre krydsende plader. Normalerne peger overvejende opad (blødt løvlys),
+  // og vertexfarven gør bunden mørk og spidsen lys — en billig, men
+  // overbevisende erstatning for gennemlyst løv.
+  function tuftGeometry() {
+    const quads = [];
+    for (let i = 0; i < 3; i++) {
+      const q = new THREE.PlaneGeometry(1, 1, 1, 2).translate(0, 0.5, 0);
+      q.rotateY((i / 3) * Math.PI);
+      quads.push(q);
+    }
+    const g = mergeNonIndexed(quads);
     const n = g.attributes.normal.array;
+    const p = g.attributes.position.array;
+    const col = new Float32Array(p.length);
     for (let i = 0; i < n.length; i += 3) {
-      const x = n[i] * 0.45, y = 1.0, z = n[i + 2] * 0.45;
+      const x = n[i] * 0.4, y = 1.0, z = n[i + 2] * 0.4;
       const l = Math.hypot(x, y, z);
       n[i] = x / l; n[i + 1] = y / l; n[i + 2] = z / l;
+      const t = M.clamp(p[i + 1], 0, 1);
+      const shade = 0.5 + t * 0.75;
+      col[i] = shade; col[i + 1] = shade; col[i + 2] = shade * 0.97;
     }
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
     return g;
   }
 
   function deformedRock(rnd, detail) {
-    const g = new THREE.IcosahedronGeometry(1, detail || 1);
+    const g = new THREE.IcosahedronGeometry(1, detail === undefined ? 1 : detail);
     const p = g.attributes.position;
     const v = new THREE.Vector3();
+    const seed = rnd() * 40;
     for (let i = 0; i < p.count; i++) {
       v.fromBufferAttribute(p, i);
-      const n = M.fbm(v.x * 1.7 + rnd() * 0.01, v.z * 1.7 + v.y * 1.1, 3);
-      v.multiplyScalar(1 + n * 0.34);
-      v.y *= 0.62 + rnd() * 0.12;
+      const n = M.fbm(v.x * 1.7 + seed, v.z * 1.7 + v.y * 1.1 + seed, 3);
+      const n2 = M.fbm(v.x * 4.3 + seed, v.z * 4.3 - v.y * 2.2, 2);
+      v.multiplyScalar(1 + n * 0.36 + n2 * 0.12);
+      v.y *= 0.72 + rnd() * 0.22;
       p.setXYZ(i, v.x, v.y, v.z);
     }
     g.computeVertexNormals();
+    const white = new Float32Array(g.attributes.position.count * 3).fill(1);
+    g.setAttribute('color', new THREE.BufferAttribute(white, 3));
     return g;
+  }
+
+  // Hjælper: byg en instans-samling ud fra en liste af transformationer.
+  function instanced(geo, mat, list, cast, receive) {
+    const im = new THREE.InstancedMesh(geo, mat, Math.max(1, list.length));
+    const d = new THREE.Object3D();
+    for (let i = 0; i < list.length; i++) {
+      const t = list[i];
+      d.position.set(t.x, t.y, t.z);
+      d.rotation.set(t.rx || 0, t.ry || 0, t.rz || 0);
+      d.scale.set(t.sx, t.sy, t.sz);
+      d.updateMatrix();
+      im.setMatrixAt(i, d.matrix);
+    }
+    im.count = list.length;
+    im.instanceMatrix.needsUpdate = true;
+    im.castShadow = !!cast;
+    im.receiveShadow = receive !== false;
+    return im;
   }
 
   O.buildProps = function (scene, tex, timeUniform) {
     const rnd = M.mulberry32(O.config.seed + 1337);
     const group = new THREE.Group();
     scene.add(group);
-    const api = { group: group, fire: null, dust: null };
+    // Det mindste pynt tegnes ikke med i vandets spejling og brydning —
+    // man ser det alligevel ikke, og det er tre gange så dyrt.
+    const detailGroup = new THREE.Group();
+    group.add(detailGroup);
+    const api = { group: group, detailGroup: detailGroup };
 
-    /* ---------- Græs og siv ---------- */
-    const grassMat = new THREE.MeshStandardMaterial({
-      map: tex.grass,
-      alphaTest: 0.48,
-      side: THREE.DoubleSide,
-      roughness: 1.0,
-      metalness: 0.0,
-      color: O.srgb(0xd8d8d0)
-    });
-    grassMat.onBeforeCompile = function (shader) {
-      shader.uniforms.uTime = timeUniform;
-      shader.vertexShader = 'uniform float uTime;\n' + shader.vertexShader;
-      shader.vertexShader = shader.vertexShader.replace(
-        '#include <begin_vertex>',
-        `#include <begin_vertex>
-         vec3 iOrigin = instanceMatrix[3].xyz;
-         float phase = iOrigin.x * 0.31 + iOrigin.z * 0.24;
-         float gust = 0.55 + 0.45 * sin(uTime * 0.35 + iOrigin.x * 0.03 + iOrigin.z * 0.02);
-         float sway = sin(uTime * 1.6 + phase) * 0.10 + sin(uTime * 3.1 + phase * 1.7) * 0.04;
-         float infl = clamp(position.y, 0.0, 1.0); infl *= infl;
-         transformed.x += sway * gust * infl;
-         transformed.z += sway * gust * infl * 0.55;`
-      );
-    };
+    /* ================= Græs og buske ================= */
+    const tuftGeo = tuftGeometry();
 
-    const grassGeo = crossQuad();
-    const GRASS_COUNT = 11000;
-    const grass = new THREE.InstancedMesh(grassGeo, grassMat, GRASS_COUNT);
-    grass.receiveShadow = true;
-    grass.instanceMatrix.setUsage(THREE.StaticDrawUsage);
-    const dummy = new THREE.Object3D();
-    let placed = 0, tries = 0;
-    while (placed < GRASS_COUNT && tries < GRASS_COUNT * 40) {
-      tries++;
-      const x = (rnd() - 0.5) * 260;
-      const z = (rnd() - 0.5) * 300;
-      const h = O.world.height(x, z);
-      const lush = O.world.lushness(x, z, h);
-      if (rnd() > lush) continue;
-      const reed = h < 0.14 && rnd() < 0.22;   // siv står med fødderne i vandet
-      const wide = (reed ? 0.34 : 0.52) + rnd() * 0.42;
-      const tall = (reed ? 0.72 + rnd() * 0.55 : 0.26 + rnd() * 0.34);
-      dummy.position.set(x, h - 0.05, z);
-      dummy.rotation.set(0, rnd() * Math.PI, 0);
-      dummy.scale.set(wide, tall, wide * (0.8 + rnd() * 0.4));
-      dummy.updateMatrix();
-      grass.setMatrixAt(placed++, dummy.matrix);
+    function foliageMaterial(colorHex) {
+      const mat = new THREE.MeshStandardMaterial({
+        map: tex.grass,
+        alphaTest: 0.34,
+        side: THREE.DoubleSide,
+        roughness: 0.95,
+        metalness: 0.0,
+        vertexColors: true,
+        color: O.srgb(colorHex),
+        envMapIntensity: 0.4
+      });
+      // Vind: hele totten vugger, spidserne mest, og vindstødene løber
+      // hen over landskabet i stedet for at ramme alt på samme tid.
+      mat.onBeforeCompile = function (shader) {
+        shader.uniforms.uTime = timeUniform;
+        shader.vertexShader = 'uniform float uTime;\n' + shader.vertexShader.replace(
+          '#include <begin_vertex>',
+          `#include <begin_vertex>
+           vec3 iOrigin = instanceMatrix[3].xyz;
+           float wave = sin(uTime * 0.55 - iOrigin.x * 0.055 - iOrigin.z * 0.04);
+           float gust = 0.45 + 0.55 * wave * wave;
+           float phase = iOrigin.x * 0.33 + iOrigin.z * 0.27;
+           float sway = sin(uTime * 1.7 + phase) * 0.09 + sin(uTime * 3.3 + phase * 1.9) * 0.035;
+           float infl = clamp(position.y, 0.0, 1.0); infl *= infl;
+           transformed.x += sway * gust * infl;
+           transformed.z += sway * gust * infl * 0.5;
+           transformed.y -= abs(sway) * gust * infl * 0.25;`
+        );
+      };
+      mat.customProgramCacheKey = function () { return 'foliage'; };
+      return mat;
     }
-    grass.count = placed;
-    grass.instanceMatrix.needsUpdate = true;
+
+    const grassMat = foliageMaterial(0xd6d6cc);
+    const bushMat = foliageMaterial(0x9fb083);
+
+    // Klyngevis udsåning: græs står i totter omkring nogle få centre,
+    // ikke jævnt fordelt som et tæppe.
+    const grassList = [];
+    const grassTint = [];
+    const bushList = [];
+    let clusters = 0, tries = 0;
+    while (clusters < 900 && tries < 60000) {
+      tries++;
+      const cx = (rnd() - 0.5) * 250;
+      const cz = (rnd() - 0.5) * 290;
+      const ch = O.world.height(cx, cz);
+      const lush = O.world.lushness(cx, cz, ch);
+      if (rnd() > lush) continue;
+      clusters++;
+
+      const spread = 0.8 + rnd() * 3.4;
+      const n = 6 + (rnd() * 22 | 0);
+      for (let i = 0; i < n; i++) {
+        const a = rnd() * 6.283;
+        const d = Math.pow(rnd(), 0.7) * spread;
+        const x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d;
+        const h = O.world.height(x, z);
+        if (h < -0.55 || h > 2.6) continue;
+        const reed = h < 0.12 && rnd() < 0.3;
+        const wide = (reed ? 0.30 : 0.40) + rnd() * 0.40;
+        const tall = reed ? 0.75 + rnd() * 0.7 : 0.22 + rnd() * 0.38;
+        grassList.push({
+          x: x, y: h - 0.04, z: z, ry: rnd() * Math.PI,
+          sx: wide, sy: tall, sz: wide * (0.8 + rnd() * 0.4)
+        });
+        // Grønnest lige ved vandet, mere strågult længere oppe.
+        const green = 1 - M.smoothstep(0.1, 1.4, h);
+        grassTint.push(green);
+      }
+
+      // Enkelte større buske i klyngerne tættest på vandet.
+      if (ch < 0.9 && rnd() < 0.32) {
+        const bs = 0.75 + rnd() * 0.9;
+        bushList.push({
+          x: cx + (rnd() - 0.5) * 2, y: ch - 0.08, z: cz + (rnd() - 0.5) * 2,
+          ry: rnd() * Math.PI, sx: bs * 1.25, sy: bs, sz: bs * 1.25
+        });
+      }
+    }
+
+    const grass = instanced(tuftGeo, grassMat, grassList, true, true);
+    const gc = new THREE.Color();
+    for (let i = 0; i < grassList.length; i++) {
+      const g = grassTint[i];
+      gc.setRGB(
+        M.lerp(1.10, 0.86, g) * (0.9 + rnd() * 0.2),
+        M.lerp(1.02, 1.02, g) * (0.9 + rnd() * 0.2),
+        M.lerp(0.80, 0.70, g) * (0.9 + rnd() * 0.2)
+      );
+      grass.setColorAt(i, gc);
+    }
+    if (grass.instanceColor) grass.instanceColor.needsUpdate = true;
     grass.frustumCulled = false;
     group.add(grass);
 
-    /* ---------- Kampesten ---------- */
+    const bushes = instanced(tuftGeo, bushMat, bushList, true, true);
+    bushes.frustumCulled = false;
+    group.add(bushes);
+
+    /* ================= Sten, nedfald og grus ================= */
     const rockMat = new THREE.MeshStandardMaterial({
-      map: tex.rock,
-      normalMap: tex.rockNormal,
-      normalScale: new THREE.Vector2(0.8, 0.8),
-      roughness: 0.9,
+      map: tex.stone,
+      normalMap: tex.stoneNormal,
+      normalScale: new THREE.Vector2(1.2, 1.2),
+      roughness: 0.93,
       metalness: 0.0,
-      color: O.srgb(0xc9a882)
+      vertexColors: true,
+      envMapIntensity: 0.5
     });
-    for (let variant = 0; variant < 4; variant++) {
-      const geo = deformedRock(rnd, 1);
-      const count = 26;
-      const im = new THREE.InstancedMesh(geo, rockMat, count);
-      im.castShadow = true;
-      im.receiveShadow = true;
-      let n = 0, t = 0;
-      while (n < count && t < 900) {
-        t++;
-        const x = (rnd() - 0.5) * 180;
-        const z = (rnd() - 0.5) * 220;
+
+    const variants = [deformedRock(rnd, 1), deformedRock(rnd, 1), deformedRock(rnd, 1), deformedRock(rnd, 0)];
+    const buckets = [[], [], [], []];
+
+    // 1) Nedfaldsklippe ved kløftens fod — skjuler den hårde linje hvor
+    //    klippe møder sand, og er dét, der får foden til at se ægte ud.
+    for (const p of (O.screePoints || [])) {
+      const n = M.clamp(p.r * 1.6, 14, 52) | 0;
+      for (let i = 0; i < n; i++) {
+        const a = rnd() * 6.283;
+        const rr = p.r * (0.86 + Math.pow(rnd(), 1.7) * 0.55);
+        const x = p.x + Math.cos(a) * rr, z = p.z + Math.sin(a) * rr;
         const h = O.world.height(x, z);
-        if (h < -1.6 || h > 5.5) continue;
-        const s = 0.5 + rnd() * (h > 1.2 ? 2.4 : 1.1);
-        dummy.position.set(x, h - s * 0.28, z);
-        dummy.rotation.set((rnd() - 0.5) * 0.5, rnd() * Math.PI * 2, (rnd() - 0.5) * 0.5);
-        dummy.scale.set(s * (0.8 + rnd() * 0.6), s, s * (0.8 + rnd() * 0.6));
-        dummy.updateMatrix();
-        im.setMatrixAt(n++, dummy.matrix);
+        if (h < -0.6) continue;
+        const s = 0.18 + Math.pow(rnd(), 2.4) * 1.35;
+        buckets[(rnd() * 4) | 0].push({
+          x: x, y: h - s * 0.3, z: z,
+          rx: (rnd() - 0.5) * 0.7, ry: rnd() * 6.283, rz: (rnd() - 0.5) * 0.7,
+          sx: s * (0.8 + rnd() * 0.6), sy: s * (0.7 + rnd() * 0.5), sz: s * (0.8 + rnd() * 0.6)
+        });
       }
-      im.count = n;
-      im.instanceMatrix.needsUpdate = true;
-      group.add(im);
     }
 
-    /* ---------- Drivtømmer ---------- */
-    const stickGeo = new THREE.CylinderGeometry(0.055, 0.085, 1, 6, 1);
-    stickGeo.rotateZ(Math.PI / 2);
-    const stickMat = new THREE.MeshStandardMaterial({ color: O.srgb(0x4a3b2c), roughness: 0.95 });
-    const sticks = new THREE.InstancedMesh(stickGeo, stickMat, 90);
-    sticks.castShadow = true;
-    sticks.receiveShadow = true;
-    let sn = 0, st = 0;
-    while (sn < 90 && st < 4000) {
-      st++;
-      const x = (rnd() - 0.5) * 150;
-      const z = (rnd() - 0.5) * 190;
+    // 2) Løse kampesten spredt i landskabet.
+    for (let i = 0, t = 0; i < 120 && t < 6000; t++) {
+      const x = (rnd() - 0.5) * 200, z = (rnd() - 0.5) * 250;
       const h = O.world.height(x, z);
-      if (h < -0.15 || h > 1.9) continue;
-      const len = 0.7 + rnd() * 2.2;
-      dummy.position.set(x, h + 0.05, z);
-      dummy.rotation.set((rnd() - 0.5) * 0.25, rnd() * Math.PI * 2, (rnd() - 0.5) * 0.18);
-      dummy.scale.set(len, 0.6 + rnd() * 0.7, 0.6 + rnd() * 0.7);
-      dummy.updateMatrix();
-      sticks.setMatrixAt(sn++, dummy.matrix);
+      if (h < -1.4 || h > 6) continue;
+      const s = 0.3 + Math.pow(rnd(), 2.0) * (h > 1.2 ? 1.9 : 0.9);
+      buckets[(rnd() * 4) | 0].push({
+        x: x, y: h - s * 0.32, z: z,
+        rx: (rnd() - 0.5) * 0.5, ry: rnd() * 6.283, rz: (rnd() - 0.5) * 0.5,
+        sx: s * (0.85 + rnd() * 0.5), sy: s, sz: s * (0.85 + rnd() * 0.5)
+      });
+      i++;
     }
-    sticks.count = sn;
-    sticks.instanceMatrix.needsUpdate = true;
-    group.add(sticks);
 
-    /* ---------- Bål på den modsatte bred ---------- */
+    // 3) Grus: mange små sten i sandet langs bredden. De ses knap enkeltvis,
+    //    men de fjerner fornemmelsen af en tom, glat flade.
+    for (let i = 0, t = 0; i < 1500 && t < 40000; t++) {
+      const x = (rnd() - 0.5) * 170, z = (rnd() - 0.5) * 210;
+      const h = O.world.height(x, z);
+      if (h < -0.7 || h > 2.2) continue;
+      const s = 0.035 + Math.pow(rnd(), 2.0) * 0.16;
+      buckets[3].push({
+        x: x, y: h - s * 0.2, z: z,
+        rx: (rnd() - 0.5) * 1.2, ry: rnd() * 6.283, rz: (rnd() - 0.5) * 1.2,
+        sx: s * 1.4, sy: s * 0.8, sz: s * 1.3
+      });
+      i++;
+    }
+
+    const stoneColor = new THREE.Color();
+    for (let v = 0; v < 4; v++) {
+      if (!buckets[v].length) continue;
+      const im = instanced(variants[v], rockMat, buckets[v], true, true);
+      for (let i = 0; i < buckets[v].length; i++) {
+        // Variation omkring teksturens egen farve: nogle sten er grå,
+        // andre trækker mod sandstenens rust.
+        const t = rnd();
+        const b = 1.0 + rnd() * 0.6;
+        stoneColor.setRGB(
+          b * M.lerp(0.86, 1.10, t),
+          b * M.lerp(0.88, 0.92, t),
+          b * M.lerp(0.92, 0.74, t)
+        );
+        im.setColorAt(i, stoneColor);
+      }
+      if (im.instanceColor) im.instanceColor.needsUpdate = true;
+      im.frustumCulled = false;
+      (v === 3 ? detailGroup : group).add(im);
+    }
+
+    /* ================= Drivtømmer ================= */
+    const stickGeo = new THREE.CylinderGeometry(0.05, 0.08, 1, 6, 1);
+    stickGeo.rotateZ(Math.PI / 2);
+    const stickMat = new THREE.MeshStandardMaterial({
+      color: O.srgb(0x5b4835), roughness: 0.95, envMapIntensity: 0.3
+    });
+    const sticks = [];
+    for (let i = 0, t = 0; i < 140 && t < 7000; t++) {
+      const x = (rnd() - 0.5) * 160, z = (rnd() - 0.5) * 200;
+      const h = O.world.height(x, z);
+      if (h < -0.2 || h > 2.1) continue;
+      const len = 0.4 + Math.pow(rnd(), 1.6) * 2.6;
+      sticks.push({
+        x: x, y: h + 0.035, z: z,
+        rx: (rnd() - 0.5) * 0.3, ry: rnd() * 6.283, rz: (rnd() - 0.5) * 0.2,
+        sx: len, sy: 0.5 + rnd() * 0.8, sz: 0.5 + rnd() * 0.8
+      });
+      i++;
+    }
+    detailGroup.add(instanced(stickGeo, stickMat, sticks, true, true));
+
+    /* ================= Bål ================= */
     const fire = new THREE.Group();
     let fx = 0, fz = 0, found = false;
-    for (let i = 0; i < 3000 && !found; i++) {
+    for (let i = 0; i < 4000 && !found; i++) {
       const ang = rnd() * Math.PI * 2;
       const rad = 30 + rnd() * 22;
       const x = Math.cos(ang) * rad, z = Math.sin(ang) * rad + 22;
@@ -1534,107 +4328,95 @@
     const fireY = O.world.height(fx, fz);
     fire.position.set(fx, fireY, fz);
 
-    // Stenring
-    const ringMat = new THREE.MeshStandardMaterial({ color: O.srgb(0x8a7a68), roughness: 0.95 });
-    const ringGeo = deformedRock(rnd, 0);
-    for (let i = 0; i < 7; i++) {
-      const a = (i / 7) * Math.PI * 2;
-      const m = new THREE.Mesh(ringGeo, ringMat);
-      m.position.set(Math.cos(a) * 0.62, 0.02, Math.sin(a) * 0.62);
-      m.scale.setScalar(0.20 + rnd() * 0.10);
-      m.rotation.y = rnd() * 3;
-      m.castShadow = true;
+    const ringGeo = deformedRock(rnd, 1);
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2 + rnd() * 0.3;
+      const m = new THREE.Mesh(ringGeo, rockMat);
+      m.position.set(Math.cos(a) * 0.66, 0.0, Math.sin(a) * 0.66);
+      m.scale.setScalar(0.18 + rnd() * 0.12);
+      m.rotation.set(rnd(), rnd() * 3, rnd());
+      m.castShadow = true; m.receiveShadow = true;
       fire.add(m);
     }
-    // Brænde
-    const logMat = new THREE.MeshStandardMaterial({ color: O.srgb(0x2e2018), roughness: 1.0 });
+    const logMat = new THREE.MeshStandardMaterial({ color: O.srgb(0x33241a), roughness: 1.0 });
     for (let i = 0; i < 5; i++) {
       const a = (i / 5) * Math.PI * 2 + 0.3;
-      const m = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.06, 0.85, 5), logMat);
-      m.position.set(Math.cos(a) * 0.16, 0.22, Math.sin(a) * 0.16);
-      m.rotation.set(Math.cos(a) * 0.75, 0, Math.sin(a) * -0.75);
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.06, 0.9, 6), logMat);
+      m.position.set(Math.cos(a) * 0.17, 0.24, Math.sin(a) * 0.17);
+      m.rotation.set(Math.cos(a) * 0.8, 0, Math.sin(a) * -0.8);
       m.castShadow = true;
       fire.add(m);
     }
 
-    // Flammer som additive partikler
-    const FCOUNT = 90;
+    const FCOUNT = 110;
     const fpos = new Float32Array(FCOUNT * 3);
     const fdata = [];
     for (let i = 0; i < FCOUNT; i++) {
-      fdata.push({ life: rnd(), speed: 0.55 + rnd() * 0.9, ang: rnd() * 6.28, rad: rnd() * 0.14, sway: 0.4 + rnd() });
+      fdata.push({ life: rnd(), speed: 0.6 + rnd() * 0.9, ang: rnd() * 6.28, rad: rnd() * 0.13, sway: 0.4 + rnd() });
     }
     const fgeo = new THREE.BufferGeometry();
     fgeo.setAttribute('position', new THREE.BufferAttribute(fpos, 3));
-    const fmat = new THREE.PointsMaterial({
-      map: tex.glow,
-      size: 0.42,
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      color: O.srgb(0xffb347),
-      sizeAttenuation: true,
-      fog: true
-    });
-    const flames = new THREE.Points(fgeo, fmat);
+    const flames = new THREE.Points(fgeo, new THREE.PointsMaterial({
+      map: tex.glow, size: 0.38, transparent: true, blending: THREE.AdditiveBlending,
+      depthWrite: false, color: 0xffa040, sizeAttenuation: true, fog: true
+    }));
     flames.frustumCulled = false;
     fire.add(flames);
 
-    const fireLight = new THREE.PointLight(0xff9a3c, 2.6, 14, 2);
+    const fireLight = new THREE.PointLight(O.srgb(0xff8c30), 3.0, 16, 2);
     fireLight.position.set(0, 0.6, 0);
     fire.add(fireLight);
     group.add(fire);
 
     api.fire = {
       group: fire,
-      data: fdata,
-      geo: fgeo,
-      light: fireLight,
       position: new THREE.Vector3(fx, fireY, fz),
       update: function (t, dt) {
         const arr = fgeo.attributes.position.array;
         for (let i = 0; i < FCOUNT; i++) {
           const d = fdata[i];
           d.life += dt * d.speed * 0.8;
-          if (d.life > 1) { d.life -= 1; d.ang = Math.random() * 6.28; d.rad = Math.random() * 0.14; }
+          if (d.life > 1) { d.life -= 1; d.ang = Math.random() * 6.28; d.rad = Math.random() * 0.13; }
           const l = d.life;
           arr[i * 3] = Math.cos(d.ang) * d.rad * (1 - l * 0.4) + Math.sin(t * 2.4 * d.sway + i) * 0.09 * l;
-          arr[i * 3 + 1] = 0.16 + l * 1.35;
+          arr[i * 3 + 1] = 0.18 + l * 1.4;
           arr[i * 3 + 2] = Math.sin(d.ang) * d.rad * (1 - l * 0.4) + Math.cos(t * 2.1 * d.sway + i) * 0.09 * l;
         }
         fgeo.attributes.position.needsUpdate = true;
-        fireLight.intensity = 2.2 + Math.sin(t * 11.0) * 0.35 + Math.sin(t * 23.7) * 0.25;
+        fireLight.intensity = 2.5 + Math.sin(t * 11.0) * 0.4 + Math.sin(t * 23.7) * 0.25;
       }
     };
 
-    /* ---------- Støv i modlyset ---------- */
-    const DCOUNT = 320;
+    /* ================= Støv i modlyset ================= */
+    const DCOUNT = 420;
     const dpos = new Float32Array(DCOUNT * 3);
     const ddata = [];
     for (let i = 0; i < DCOUNT; i++) {
-      ddata.push({ x: (rnd() - 0.5) * 60, y: rnd() * 8, z: (rnd() - 0.5) * 60, s: 0.2 + rnd() * 0.5, p: rnd() * 6.28 });
+      ddata.push({ x: (rnd() - 0.5) * 55, y: rnd() * 9, z: (rnd() - 0.5) * 55, s: 0.2 + rnd() * 0.5, p: rnd() * 6.28 });
     }
     const dgeo = new THREE.BufferGeometry();
     dgeo.setAttribute('position', new THREE.BufferAttribute(dpos, 3));
     const dust = new THREE.Points(dgeo, new THREE.PointsMaterial({
-      map: tex.spark, size: 0.075, transparent: true, opacity: 0.55,
-      blending: THREE.AdditiveBlending, depthWrite: false, color: O.srgb(0xffe6bd), fog: false
+      map: tex.spark, size: 0.065, transparent: true, opacity: 0.5,
+      blending: THREE.AdditiveBlending, depthWrite: false, color: 0xffe4bb, fog: false
     }));
     dust.frustumCulled = false;
-    group.add(dust);
+    detailGroup.add(dust);
     api.dust = {
       update: function (t, camPos) {
         const arr = dgeo.attributes.position.array;
         for (let i = 0; i < DCOUNT; i++) {
           const d = ddata[i];
-          arr[i * 3] = camPos.x + d.x + Math.sin(t * 0.25 * d.s + d.p) * 2.4;
-          arr[i * 3 + 1] = 0.4 + ((d.y + t * 0.14 * d.s) % 8);
-          arr[i * 3 + 2] = camPos.z + d.z + Math.cos(t * 0.21 * d.s + d.p) * 2.4;
+          arr[i * 3] = camPos.x + d.x + Math.sin(t * 0.25 * d.s + d.p) * 2.2;
+          arr[i * 3 + 1] = 0.3 + ((d.y + t * 0.13 * d.s) % 9);
+          arr[i * 3 + 2] = camPos.z + d.z + Math.cos(t * 0.21 * d.s + d.p) * 2.2;
         }
         dgeo.attributes.position.needsUpdate = true;
       }
     };
 
+    api.counts = { grass: grassList.length, bushes: bushList.length,
+                   rocks: buckets.reduce((a, b) => a + b.length, 0), sticks: sticks.length };
     return api;
   };
 })();
@@ -1979,12 +4761,12 @@
     // En simpel, lav-poly hånd der kommer ind fra nederste højre hjørne
     // med en pind i næven — samme greb som i referencen.
     const hand = new THREE.Group();
-    const skin = new THREE.MeshStandardMaterial({ color: O.srgb(0x6b4526), roughness: 0.85, metalness: 0.0 });
+    const skin = new THREE.MeshStandardMaterial({ color: O.srgb(0x8a5c38), roughness: 0.78, metalness: 0.0, envMapIntensity: 0.35 });
     const sleeve = new THREE.MeshStandardMaterial({ color: O.srgb(0x574c3a), roughness: 0.98 });
-    const wood = new THREE.MeshStandardMaterial({ color: O.srgb(0x3b2b1c), roughness: 0.95 });
+    const wood = new THREE.MeshStandardMaterial({ color: O.srgb(0x4a3524), roughness: 0.9, envMapIntensity: 0.3 });
     const cord = new THREE.MeshStandardMaterial({ color: O.srgb(0x4b5228), roughness: 1.0 });
 
-    const forearm = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.115, 0.75, 12), skin);
+    const forearm = new THREE.Mesh(new THREE.CylinderGeometry(0.072, 0.10, 0.8, 14), skin);
     forearm.position.set(0.15, -0.34, 0.22);
     forearm.rotation.set(-0.62, 0.0, 0.42);
     hand.add(forearm);
@@ -1994,12 +4776,12 @@
     cuff.rotation.copy(forearm.rotation);
     hand.add(cuff);
 
-    const fist = new THREE.Mesh(new THREE.SphereGeometry(0.125, 16, 12), skin);
-    fist.scale.set(1.0, 0.82, 1.2);
+    const fist = new THREE.Mesh(new THREE.SphereGeometry(0.105, 18, 14), skin);
+    fist.scale.set(0.95, 0.86, 1.25);
     fist.position.set(0.0, 0.0, 0.0);
     hand.add(fist);
 
-    const knuckles = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.075, 0.18), skin);
+    const knuckles = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.065, 0.16), skin);
     knuckles.position.set(-0.03, 0.06, -0.02);
     knuckles.rotation.set(0.1, 0.0, 0.12);
     hand.add(knuckles);
@@ -2014,11 +4796,11 @@
 
     // Fingre der lukker om pinden.
     const fingerGeo = THREE.CapsuleGeometry
-      ? new THREE.CapsuleGeometry(0.032, 0.13, 4, 8)
+      ? new THREE.CapsuleGeometry(0.026, 0.12, 4, 10)
       : new THREE.CylinderGeometry(0.034, 0.034, 0.19, 8);
     for (let i = 0; i < 4; i++) {
       const f = new THREE.Mesh(fingerGeo, skin);
-      f.position.set(-0.055, 0.075 - i * 0.055, -0.055 + i * 0.012);
+      f.position.set(-0.05, 0.068 - i * 0.048, -0.05 + i * 0.010);
       f.rotation.set(0.0, 0.0, Math.PI / 2 - 0.12 - i * 0.05);
       hand.add(f);
     }
@@ -2044,8 +4826,8 @@
     heldStone.position.set(-0.02, 0.13, -0.07);
     hand.add(heldStone);
 
-    hand.scale.setScalar(0.62);
-    hand.position.set(0.40, -0.34, -0.56);
+    hand.scale.setScalar(0.54);
+    hand.position.set(0.42, -0.33, -0.54);
     hand.rotation.set(0.05, -0.52, 0.14);
     camera.add(hand);
 
@@ -2140,8 +4922,8 @@
       camera.rotateZ(Math.cos(state.bob) * 0.012 * state.bobAmount);
 
       // Hånden følger lidt efter og vipper i takt med skridtene.
-      hand.position.x = 0.40 - bobX * 0.5;
-      hand.position.y = -0.34 + bobY * 0.8 - state.bobAmount * 0.02;
+      hand.position.x = 0.42 - bobX * 0.5;
+      hand.position.y = -0.33 + bobY * 0.8 - state.bobAmount * 0.02;
       hand.rotation.z = 0.06 + Math.sin(state.bob * 2.0) * 0.05 * state.bobAmount;
       hand.rotation.x = Math.sin(state.bob) * 0.04 * state.bobAmount - state.pitch * 0.12;
 
@@ -2389,6 +5171,144 @@
 
 </script>
 <script>
+/* ---- src/97-post.js ---- */
+/* ------------------------------------------------------------------
+   Efterbehandling: bloom på de lyseste steder, filmisk farvegradering
+   med varme højlys og kølige skygger, vignet og kantudjævning.
+   Det er det sidste lag der binder billedet sammen.
+   ------------------------------------------------------------------ */
+(function () {
+  const O = window.OASIS;
+
+  const GradeShader = {
+    uniforms: {
+      tDiffuse: { value: null },
+      uExposure: { value: 1.0 },
+      uContrast: { value: 1.04 },
+      uSaturation: { value: 1.08 },
+      uVignette: { value: 0.34 },
+      uShadowTint: { value: new THREE.Vector3(0.94, 0.98, 1.10) },
+      uHighlightTint: { value: new THREE.Vector3(1.05, 1.00, 0.94) },
+      uGrain: { value: 0.018 },
+      uTime: { value: 0 }
+    },
+    vertexShader: `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform sampler2D tDiffuse;
+      uniform float uExposure, uContrast, uSaturation, uVignette, uGrain, uTime;
+      uniform vec3 uShadowTint, uHighlightTint;
+      varying vec2 vUv;
+
+      float luma(vec3 c){ return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
+
+      // Lineær -> sRGB. Composerens buffere er lineære, så konverteringen
+      // skal ske her til sidst i stedet for i rendereren.
+      vec3 toSRGB(vec3 c){
+        return mix(c * 12.92, 1.055 * pow(max(c, 0.0), vec3(1.0 / 2.4)) - 0.055,
+                   step(0.0031308, c));
+      }
+
+      void main() {
+        vec3 c = texture2D(tDiffuse, vUv).rgb * uExposure;
+
+        // Delt toning: skygger trækkes mod himlens blå, højlys mod solens varme.
+        float l = luma(c);
+        c *= mix(uShadowTint, uHighlightTint, smoothstep(0.05, 0.65, l));
+
+        // Blød S-kurve omkring middeltonen.
+        c = clamp((c - 0.5) * uContrast + 0.5, 0.0, 1.0);
+        c = c * c * (3.0 - 2.0 * c) * 0.22 + c * 0.78;
+
+        // Mætning.
+        c = mix(vec3(luma(c)), c, uSaturation);
+
+        // Vignet — svag, kun for at samle blikket.
+        vec2 q = vUv - 0.5;
+        float v = 1.0 - uVignette * dot(q, q) * 1.9;
+        c *= v;
+
+        c = toSRGB(max(c, 0.0));
+
+        // En anelse korn, så de store flader ikke banding'er.
+        float g = fract(sin(dot(vUv * 1024.0 + uTime, vec2(12.9898, 78.233))) * 43758.5453);
+        c += (g - 0.5) * uGrain;
+
+        gl_FragColor = vec4(c, 1.0);
+      }
+    `
+  };
+
+  O.buildPost = function (renderer, scene, camera) {
+    const size = new THREE.Vector2();
+    renderer.getSize(size);
+    const pr = renderer.getPixelRatio();
+    const w = Math.floor(size.x * pr), h = Math.floor(size.y * pr);
+
+    // Multisamplet mål på WebGL2 giver ægte kantudjævning selv med
+    // efterbehandling; ellers falder vi tilbage på FXAA.
+    let target = null;
+    const msaa = renderer.capabilities.isWebGL2 && THREE.WebGLMultisampleRenderTarget;
+    if (msaa) {
+      target = new THREE.WebGLMultisampleRenderTarget(w, h, {
+        minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
+        format: THREE.RGBAFormat, encoding: THREE.LinearEncoding
+      });
+      target.samples = 4;
+    }
+
+    const composer = new THREE.EffectComposer(renderer, target || undefined);
+    composer.setPixelRatio(pr);
+    composer.setSize(size.x, size.y);
+
+    composer.addPass(new THREE.RenderPass(scene, camera));
+
+    const bloom = new THREE.UnrealBloomPass(new THREE.Vector2(w, h), 0.22, 0.7, 0.93);
+    composer.addPass(bloom);
+
+    const grade = new THREE.ShaderPass(GradeShader);
+    composer.addPass(grade);
+
+    let fxaa = null;
+    if (!msaa) {
+      fxaa = new THREE.ShaderPass(THREE.FXAAShader);
+      fxaa.material.uniforms.resolution.value.set(1 / w, 1 / h);
+      composer.addPass(fxaa);
+    }
+    composer.passes[composer.passes.length - 1].renderToScreen = true;
+
+    return {
+      composer: composer,
+      bloom: bloom,
+      grade: grade,
+      render: function (dt, t) {
+        grade.material.uniforms.uTime.value = t;
+        composer.render(dt);
+      },
+      resize: function () {
+        renderer.getSize(size);
+        const p = renderer.getPixelRatio();
+        const nw = Math.floor(size.x * p), nh = Math.floor(size.y * p);
+        composer.setPixelRatio(p);
+        composer.setSize(size.x, size.y);
+        bloom.setSize(nw, nh);
+        if (fxaa) fxaa.material.uniforms.resolution.value.set(1 / nw, 1 / nh);
+      },
+      setQuality: function (high) {
+        bloom.enabled = true;
+        bloom.strength = high ? 0.22 : 0.14;
+      }
+    };
+  };
+})();
+
+</script>
+<script>
 /* ---- src/99-main.js ---- */
 /* ------------------------------------------------------------------
    Opstart og render-løkke.
@@ -2406,7 +5326,7 @@
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.outputEncoding = THREE.sRGBEncoding;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 0.94;
+    renderer.toneMappingExposure = 0.78;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -2415,16 +5335,17 @@
     scene.add(camera);
 
     const timeUniform = { value: 0 };
-    let tex, sky, terrain, cliffs, water, props, stones, player, audio;
+    let tex, sky, terrain, cliffs, water, props, stones, player, audio, post;
 
     const steps = [
-      ['Blander sand og sten…', function () { tex = O.textures.build(); }],
-      ['Rejser himlen…', function () { sky = O.buildSky(scene); }],
+      ['Blander sand og sten…', function () { tex = O.textures.build(renderer); }],
+      ['Rejser himlen…', function () { sky = O.buildSky(scene, renderer); }],
       ['Former flodlejet…', function () { terrain = O.buildTerrain(scene, tex); }],
       ['Stabler kløftens lag…', function () { cliffs = O.buildCliffs(scene, tex); }],
       ['Fylder vand i oasen…', function () { water = O.buildWater(scene, renderer, camera, sky); }],
       ['Sår græs og tænder bål…', function () { props = O.buildProps(scene, tex, timeUniform); }],
       ['Spreder sten på bredden…', function () { stones = O.buildStones(scene, tex); }],
+      ['Blander farverne…', function () { post = O.buildPost(renderer, scene, camera); }],
       ['Snører støvlerne…', function () {
         player = O.buildPlayer(camera, canvas);
         audio = O.buildAudio();
@@ -2455,7 +5376,7 @@
       let t = 0;
       let stepDistance = 0;
       let frames = 0, frameAcc = 0, reflectSkip = 0, quality = 1;
-      const hideInReflection = [player.hand, stones.highlight];
+      const hideInReflection = [player.hand, stones.highlight, props.detailGroup];
 
       // Startskærmen ligger oven på lærredet, så klikket fanges på
       // dokumentet — ellers ville man aldrig komme i gang.
@@ -2502,6 +5423,7 @@
         camera.aspect = window.innerWidth / window.innerHeight;
         camera.updateProjectionMatrix();
         renderer.setSize(window.innerWidth, window.innerHeight);
+        post.resize();
         water.resize();
       });
 
@@ -2530,9 +5452,9 @@
 
         // Skyggekeglen følger spilleren, så skyggerne altid er skarpe.
         sky.light.position.set(
-          player.pos.x + sky.sun.x * 120,
-          sky.sun.y * 120,
-          player.pos.z + sky.sun.z * 120
+          player.pos.x + sky.sun.x * 180,
+          sky.sun.y * 180,
+          player.pos.z + sky.sun.z * 180
         );
         sky.light.target.position.set(player.pos.x, 0, player.pos.z);
         sky.light.target.updateMatrixWorld();
@@ -2541,13 +5463,18 @@
         water.uniforms.uTime.value = t;
         water.uniforms.uCamPos.value.copy(camera.position);
 
-        // Spejlingen opdateres hver frame — eller hver anden, hvis maskinen er presset.
+        // Spejlingen opdateres hver frame — eller hver anden, hvis maskinen
+        // er presset. Er der slet intet vand i nærheden, springes begge de
+        // ekstra pas over.
         reflectSkip++;
-        if (quality === 1 || reflectSkip % 2 === 0) {
-          water.update(scene, hideInReflection);
+        const rv = O.world.river(camera.position.x, camera.position.z);
+        const toWater = rv.d - rv.w;
+        if (toWater < 170 && (quality === 1 || reflectSkip % 2 === 0)) {
+          water.update(scene, hideInReflection, toWater < 40);
         }
 
-        renderer.render(scene, camera);
+        post.render(dt, t);
+        O.debug.frames++;
 
         // Enkel automatisk kvalitetsjustering.
         frameAcc += dt; frames++;
@@ -2557,8 +5484,11 @@
             quality = 0;
             pixelRatio = Math.min(pixelRatio, 1.25);
             renderer.setPixelRatio(pixelRatio);
+            post.resize();
+            post.setQuality(false);
           } else if (avg < 0.016 && quality === 0) {
             quality = 1;
+            post.setQuality(true);
           }
           frames = 0; frameAcc = 0;
         }
@@ -2566,8 +5496,9 @@
 
       // Bruges af udviklings-scriptet til at tage skærmbilleder.
       O.debug = {
+        frames: 0,
         scene: scene, camera: camera, renderer: renderer, player: player,
-        stones: stones, water: water, sky: sky, props: props,
+        stones: stones, water: water, sky: sky, props: props, post: post,
         terrain: terrain, cliffs: cliffs, hud: hud
       };
 

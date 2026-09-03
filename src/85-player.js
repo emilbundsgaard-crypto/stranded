@@ -110,12 +110,12 @@
     // En simpel, lav-poly hånd der kommer ind fra nederste højre hjørne
     // med en pind i næven — samme greb som i referencen.
     const hand = new THREE.Group();
-    const skin = new THREE.MeshStandardMaterial({ color: O.srgb(0x6b4526), roughness: 0.85, metalness: 0.0 });
+    const skin = new THREE.MeshStandardMaterial({ color: O.srgb(0x8a5c38), roughness: 0.78, metalness: 0.0, envMapIntensity: 0.35 });
     const sleeve = new THREE.MeshStandardMaterial({ color: O.srgb(0x574c3a), roughness: 0.98 });
-    const wood = new THREE.MeshStandardMaterial({ color: O.srgb(0x3b2b1c), roughness: 0.95 });
+    const wood = new THREE.MeshStandardMaterial({ color: O.srgb(0x4a3524), roughness: 0.9, envMapIntensity: 0.3 });
     const cord = new THREE.MeshStandardMaterial({ color: O.srgb(0x4b5228), roughness: 1.0 });
 
-    const forearm = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.115, 0.75, 12), skin);
+    const forearm = new THREE.Mesh(new THREE.CylinderGeometry(0.072, 0.10, 0.8, 14), skin);
     forearm.position.set(0.15, -0.34, 0.22);
     forearm.rotation.set(-0.62, 0.0, 0.42);
     hand.add(forearm);
@@ -125,12 +125,12 @@
     cuff.rotation.copy(forearm.rotation);
     hand.add(cuff);
 
-    const fist = new THREE.Mesh(new THREE.SphereGeometry(0.125, 16, 12), skin);
-    fist.scale.set(1.0, 0.82, 1.2);
+    const fist = new THREE.Mesh(new THREE.SphereGeometry(0.105, 18, 14), skin);
+    fist.scale.set(0.95, 0.86, 1.25);
     fist.position.set(0.0, 0.0, 0.0);
     hand.add(fist);
 
-    const knuckles = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.075, 0.18), skin);
+    const knuckles = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.065, 0.16), skin);
     knuckles.position.set(-0.03, 0.06, -0.02);
     knuckles.rotation.set(0.1, 0.0, 0.12);
     hand.add(knuckles);
@@ -145,11 +145,11 @@
 
     // Fingre der lukker om pinden.
     const fingerGeo = THREE.CapsuleGeometry
-      ? new THREE.CapsuleGeometry(0.032, 0.13, 4, 8)
+      ? new THREE.CapsuleGeometry(0.026, 0.12, 4, 10)
       : new THREE.CylinderGeometry(0.034, 0.034, 0.19, 8);
     for (let i = 0; i < 4; i++) {
       const f = new THREE.Mesh(fingerGeo, skin);
-      f.position.set(-0.055, 0.075 - i * 0.055, -0.055 + i * 0.012);
+      f.position.set(-0.05, 0.068 - i * 0.048, -0.05 + i * 0.010);
       f.rotation.set(0.0, 0.0, Math.PI / 2 - 0.12 - i * 0.05);
       hand.add(f);
     }
@@ -175,8 +175,8 @@
     heldStone.position.set(-0.02, 0.13, -0.07);
     hand.add(heldStone);
 
-    hand.scale.setScalar(0.62);
-    hand.position.set(0.40, -0.34, -0.56);
+    hand.scale.setScalar(0.54);
+    hand.position.set(0.42, -0.33, -0.54);
     hand.rotation.set(0.05, -0.52, 0.14);
     camera.add(hand);
 
@@ -271,8 +271,8 @@
       camera.rotateZ(Math.cos(state.bob) * 0.012 * state.bobAmount);
 
       // Hånden følger lidt efter og vipper i takt med skridtene.
-      hand.position.x = 0.40 - bobX * 0.5;
-      hand.position.y = -0.34 + bobY * 0.8 - state.bobAmount * 0.02;
+      hand.position.x = 0.42 - bobX * 0.5;
+      hand.position.y = -0.33 + bobY * 0.8 - state.bobAmount * 0.02;
       hand.rotation.z = 0.06 + Math.sin(state.bob * 2.0) * 0.05 * state.bobAmount;
       hand.rotation.x = Math.sin(state.bob) * 0.04 * state.bobAmount - state.pitch * 0.12;
 

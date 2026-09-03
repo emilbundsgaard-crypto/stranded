@@ -44,8 +44,10 @@
   const SPINE = buildSpine();
 
   // Afstand til flodens midterlinje + den lokale bredde på det sted.
-  const _res = { d: 0, w: 0 };
-  function river(x, z) {
+  // Den eksakte udgave løber hele rygraden igennem og er for dyr til at
+  // kalde hundredtusindvis af gange, så resultatet lægges i et gitter og
+  // slås op med bilineær interpolation bagefter.
+  function riverExact(x, z, out) {
     let best = Infinity, bw = 12;
     for (let i = 0; i < SPINE.length - 1; i++) {
       const a = SPINE[i], b = SPINE[i + 1];
@@ -54,16 +56,50 @@
       const len2 = vx * vx + vz * vz;
       let t = len2 > 0 ? (wx * vx + wz * vz) / len2 : 0;
       t = t < 0 ? 0 : t > 1 ? 1 : t;
-      const px = a.x + vx * t, pz = a.z + vz * t;
-      const dx = x - px, dz = z - pz;
+      const dx = x - (a.x + vx * t), dz = z - (a.z + vz * t);
       const d2 = dx * dx + dz * dz;
-      if (d2 < best) {
-        best = d2;
-        bw = M.lerp(a.w, b.w, t);
+      if (d2 < best) { best = d2; bw = M.lerp(a.w, b.w, t); }
+    }
+    out.d = Math.sqrt(best);
+    out.w = bw;
+    return out;
+  }
+
+  const GRID_N = 320;
+  const GRID_EXTENT = 420;          // gitteret dækker mere end verden er stor
+  const gridD = new Float32Array(GRID_N * GRID_N);
+  const gridW = new Float32Array(GRID_N * GRID_N);
+  (function buildGrid() {
+    const tmp = { d: 0, w: 0 };
+    const step = (GRID_EXTENT * 2) / (GRID_N - 1);
+    for (let j = 0; j < GRID_N; j++) {
+      const z = -GRID_EXTENT + j * step;
+      for (let i = 0; i < GRID_N; i++) {
+        const x = -GRID_EXTENT + i * step;
+        riverExact(x, z, tmp);
+        gridD[j * GRID_N + i] = tmp.d;
+        gridW[j * GRID_N + i] = tmp.w;
       }
     }
-    _res.d = Math.sqrt(best);
-    _res.w = bw;
+  })();
+
+  const _res = { d: 0, w: 0 };
+  function river(x, z) {
+    const step = (GRID_EXTENT * 2) / (GRID_N - 1);
+    let fx = (x + GRID_EXTENT) / step;
+    let fz = (z + GRID_EXTENT) / step;
+    if (fx < 0 || fz < 0 || fx > GRID_N - 1.001 || fz > GRID_N - 1.001) {
+      return riverExact(x, z, _res);
+    }
+    const i0 = fx | 0, j0 = fz | 0;
+    const tx = fx - i0, tz = fz - j0;
+    const k00 = j0 * GRID_N + i0, k10 = k00 + 1, k01 = k00 + GRID_N, k11 = k01 + 1;
+    const d0 = gridD[k00] + (gridD[k10] - gridD[k00]) * tx;
+    const d1 = gridD[k01] + (gridD[k11] - gridD[k01]) * tx;
+    const w0 = gridW[k00] + (gridW[k10] - gridW[k00]) * tx;
+    const w1 = gridW[k01] + (gridW[k11] - gridW[k01]) * tx;
+    _res.d = d0 + (d1 - d0) * tz;
+    _res.w = w0 + (w1 - w0) * tz;
     return _res;
   }
 
