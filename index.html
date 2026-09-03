@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Oasen — en stille kløft</title>
+<style>
+  :root {
+    --sand: #e7d7bd;
+    --ink: #1b1712;
+    --warm: #f4b350;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%; overflow: hidden;
+    background: #0b0a09; color: var(--sand);
+    font-family: "Avenir Next", "Segoe UI", Inter, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  canvas { display: block; width: 100%; height: 100%; }
+
+  /* ---------- HUD ---------- */
+  #hud { position: fixed; inset: 0; pointer-events: none; transition: opacity .35s ease; }
+
+  #crosshair {
+    position: absolute; left: 50%; top: 50%; width: 5px; height: 5px;
+    margin: -2.5px 0 0 -2.5px; border-radius: 50%;
+    background: rgba(255,255,255,.75); box-shadow: 0 0 6px rgba(0,0,0,.55);
+    transition: transform .15s ease;
+  }
+
+  #prompt {
+    position: absolute; left: 50%; top: calc(50% + 34px); transform: translate(-50%, 6px);
+    padding: 7px 14px; border-radius: 999px;
+    background: rgba(18,15,11,.6); border: 1px solid rgba(255,255,255,.14);
+    backdrop-filter: blur(7px);
+    font-size: 13.5px; letter-spacing: .2px; white-space: nowrap;
+    opacity: 0; transition: opacity .16s ease, transform .16s ease;
+  }
+  #prompt.show { opacity: 1; transform: translate(-50%, 0); }
+  #prompt b {
+    display: inline-block; min-width: 18px; margin-right: 6px; padding: 1px 5px;
+    border-radius: 4px; background: rgba(255,255,255,.16); font-size: 11.5px;
+  }
+
+  #pocket {
+    position: absolute; left: 22px; bottom: 20px; min-width: 208px;
+    padding: 13px 15px 11px; border-radius: 12px;
+    background: linear-gradient(180deg, rgba(20,16,12,.56), rgba(20,16,12,.40));
+    border: 1px solid rgba(255,255,255,.10); backdrop-filter: blur(9px);
+  }
+  #pocket h3 {
+    margin: 0 0 9px; font-size: 10.5px; font-weight: 600;
+    letter-spacing: .18em; text-transform: uppercase; color: rgba(231,215,189,.62);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  #pocket h3 span { color: var(--warm); font-size: 12px; letter-spacing: normal; }
+  #invList { margin: 0; padding: 0; list-style: none; font-size: 13px; }
+  #invList li { display: flex; align-items: center; gap: 9px; padding: 2.5px 0; }
+  #invList i { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 8px; box-shadow: 0 0 8px currentColor; }
+  #invList .nm { flex: 1; color: rgba(231,215,189,.92); }
+  #invList .ct { color: rgba(231,215,189,.55); font-variant-numeric: tabular-nums; }
+  #invList .empty { color: rgba(231,215,189,.38); font-size: 12px; font-style: italic; }
+
+  #toast {
+    position: absolute; left: 50%; top: 22%; transform: translate(-50%, 10px);
+    padding: 10px 18px; border-radius: 10px; border-left: 3px solid var(--warm);
+    background: rgba(18,15,11,.62); backdrop-filter: blur(8px);
+    opacity: 0; transition: opacity .3s ease, transform .3s ease; text-align: center;
+  }
+  #toast.show { opacity: 1; transform: translate(-50%, 0); }
+  .t-name { display: block; font-size: 15px; letter-spacing: .3px; }
+  .t-rar { display: block; margin-top: 2px; font-size: 10.5px; letter-spacing: .18em;
+           text-transform: uppercase; color: rgba(231,215,189,.55); }
+
+  #keys {
+    position: absolute; right: 20px; bottom: 20px; text-align: right;
+    font-size: 11.5px; line-height: 1.75; color: rgba(231,215,189,.45);
+  }
+  #keys b { color: rgba(231,215,189,.75); font-weight: 600; }
+
+  /* ---------- Overlay ---------- */
+  #overlay {
+    position: fixed; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center;
+    background: radial-gradient(120% 90% at 50% 40%, rgba(24,19,14,.62), rgba(10,8,6,.92));
+    backdrop-filter: blur(3px); z-index: 20; cursor: pointer;
+    transition: opacity .5s ease, visibility .5s;
+  }
+  #overlay.hidden { opacity: 0; visibility: hidden; }
+  #overlayTitle {
+    margin: 0; font-size: 46px; font-weight: 300; letter-spacing: .26em;
+    text-transform: uppercase; color: #f0e2c9; text-shadow: 0 2px 30px rgba(0,0,0,.6);
+  }
+  #overlaySub { margin: 12px 0 30px; font-size: 13.5px; color: rgba(231,215,189,.55); letter-spacing: .04em; }
+  #controls {
+    display: grid; grid-template-columns: auto auto; gap: 7px 16px;
+    font-size: 13px; color: rgba(231,215,189,.72); margin-bottom: 30px;
+  }
+  #controls kbd {
+    justify-self: end; padding: 2px 8px; border-radius: 5px; font-family: inherit; font-size: 11.5px;
+    background: rgba(255,255,255,.09); border: 1px solid rgba(255,255,255,.13);
+  }
+  #controls span { justify-self: start; }
+  #overlayHint { font-size: 13px; color: var(--warm); letter-spacing: .1em; text-transform: uppercase; }
+  #overlayHint::after { content: ''; }
+  #loading { width: 240px; }
+  #loadText { font-size: 12.5px; color: rgba(231,215,189,.6); margin-bottom: 10px; }
+  #loadTrack { height: 2px; background: rgba(255,255,255,.12); border-radius: 2px; overflow: hidden; }
+  #loadBar { height: 100%; width: 0%; background: var(--warm); transition: width .3s ease; }
+  #startBox { display: none; }
+  #fallback {
+    display: none; max-width: 420px; font-size: 13px; line-height: 1.6;
+    color: rgba(231,215,189,.75);
+  }
+
+  @media (max-width: 620px) {
+    #overlayTitle { font-size: 30px; }
+    #pocket { min-width: 168px; left: 12px; bottom: 12px; }
+    #keys { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<canvas id="scene"></canvas>
+
+<div id="hud">
+  <div id="crosshair"></div>
+  <div id="prompt"></div>
+  <div id="toast"></div>
+  <div id="pocket">
+    <h3>Lomme <span id="invCount">0</span></h3>
+    <ul id="invList"></ul>
+  </div>
+  <div id="keys">
+    <div><b>WASD</b> gå &nbsp; <b>Shift</b> løb</div>
+    <div><b>E</b> / klik saml op &nbsp; <b>F</b> skjul HUD</div>
+    <div><b>M</b> lyd (<span id="sndState">til</span>) &nbsp; <b>Esc</b> pause</div>
+  </div>
+</div>
+
+<div id="overlay">
+  <h1 id="overlayTitle">Oasen</h1>
+  <p id="overlaySub">En stille flod i kløften. Gå en tur, kig dig omkring, saml sten.</p>
+  <div id="loading">
+    <div id="loadText">Vågner op…</div>
+    <div id="loadTrack"><div id="loadBar"></div></div>
+  </div>
+  <div id="startBox">
+    <div id="controls">
+      <kbd>WASD</kbd><span>gå rundt</span>
+      <kbd>Shift</kbd><span>løb</span>
+      <kbd>Mus</kbd><span>kig</span>
+      <kbd>E</kbd><span>saml sten op</span>
+      <kbd>F</kbd><span>skjul HUD (til skærmbilleder)</span>
+      <kbd>Esc</kbd><span>slip musen</span>
+    </div>
+    <div id="overlayHint">Klik for at gå ind i kløften</div>
+  </div>
+  <div id="fallback">
+    Kunne ikke indlæse 3D-motoren. Åbn mappen med en lille webserver, fx
+    <code>python3 -m http.server</code>, og gå til <code>localhost:8000</code>.
+  </div>
+</div>
+
+<script src="vendor/three.min.js"></script>
+<script src="src/00-core.js"></script>
+<script src="src/10-world.js"></script>
+<script src="src/20-textures.js"></script>
+<script src="src/30-terrain.js"></script>
+<script src="src/40-cliffs.js"></script>
+<script src="src/50-sky.js"></script>
+<script src="src/60-water.js"></script>
+<script src="src/70-props.js"></script>
+<script src="src/80-stones.js"></script>
+<script src="src/85-player.js"></script>
+<script src="src/90-audio.js"></script>
+<script src="src/95-hud.js"></script>
+<script src="src/99-main.js"></script>
+<script>
+  if (typeof THREE === 'undefined') {
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('fallback').style.display = 'block';
+  }
+</script>
+</body>
+</html>
