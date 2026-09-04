@@ -54,8 +54,15 @@
 
   const ORDER = ['low', 'medium', 'high', 'ultra', 'kino'];
 
+  // Sikker tilstand: den enkleste vej gennem hele motoren. Ingen
+  // efterbehandling, ingen kaskade-skygger, ingen ekstra vandpas. Den findes
+  // for at kunne svare på ét spørgsmål: virker grundmotoren på maskinen?
+  const params0 = new URLSearchParams(window.location.search);
+  O.safeMode = params0.has('safe') || params0.get('safe') === '1';
+
   function detectDefault() {
     const params = new URLSearchParams(window.location.search);
+    if (O.safeMode) return 'low';
     const asked = params.get('quality') || params.get('kvalitet');
     if (asked && PRESETS[asked]) return asked;
 
@@ -68,8 +75,11 @@
       if (saved && PRESETS[saved]) return saved;
     } catch (e) { /* privat browser-tilstand */ }
 
-    // I browseren starter vi forsigtigt. Bliver der luft, trapper den selv op.
-    return 'medium';
+    // Safari er strammere med WebGL-hukommelse end Chrome; der starter vi
+    // et niveau lavere, indtil andet er bevist.
+    const ua = navigator.userAgent;
+    const safari = /Safari/.test(ua) && !/Chrome|Chromium|Edg/.test(ua);
+    return safari ? 'low' : 'medium';
   }
 
   const current = detectDefault();

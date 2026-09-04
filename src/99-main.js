@@ -7,6 +7,7 @@
   function boot() {
     const hud = O.buildHud();
     hud.initQualityButtons();
+    O.diagnostics.install();
     const canvas = document.getElementById('scene');
 
     const Q = O.quality.settings;
@@ -55,7 +56,7 @@
     scene.add(camera);
 
     const timeUniform = { value: 0 };
-    let tex, sky, terrain, cliffs, water, props, stones, player, audio, post;
+    let tex, sky, terrain, cliffs, water, props, stones, player, audio, post, wreck;
 
     const steps = [
       ['Blander sand og sten…', function () { tex = O.textures.build(renderer); }],
@@ -63,9 +64,12 @@
       ['Former flodlejet…', function () { terrain = O.buildTerrain(scene, tex, timeUniform); }],
       ['Stabler kløftens lag…', function () { cliffs = O.buildCliffs(scene, tex); }],
       ['Fylder vand i oasen…', function () { water = O.buildWater(scene, renderer, camera, sky); }],
+
+      ['Efterlader et vrag i vandet…', function () { wreck = O.buildWreck(scene, tex, timeUniform); }],
       ['Sår græs og tænder bål…', function () { props = O.buildProps(scene, tex, timeUniform); }],
       ['Spreder sten på bredden…', function () { stones = O.buildStones(scene, tex); }],
       ['Kobler skygger på…', function () {
+        if (O.safeMode) return;
         const seen = new Set();
         scene.traverse(function (obj) {
           const mats = obj.material ? (Array.isArray(obj.material) ? obj.material : [obj.material]) : [];
@@ -85,7 +89,19 @@
           }
         });
       }],
-      ['Blander farverne…', function () { post = O.buildPost(renderer, scene, camera); }],
+      ['Blander farverne…', function () {
+        if (O.safeMode) {
+          // Ingen efterbehandling overhovedet: scenen går direkte på skærmen.
+          post = {
+            render: function () { renderer.setRenderTarget(null); renderer.render(scene, camera); },
+            resize: function () {}, setQuality: function () {},
+            bloom: { strength: 0 },
+            ssao: { enabled: false }, godrays: { enabled: false }
+          };
+        } else {
+          post = O.buildPost(renderer, scene, camera);
+        }
+      }],
       ['Varmer shaderne op…', function () {
         // Uden det her oversættes shaderne først, når man drejer og et nyt
         // materiale kommer i billedet — det giver hak de første sekunder.
@@ -120,6 +136,7 @@
       let t = 0;
       let stepDistance = 0;
       let frames = 0, frameAcc = 0, reflectSkip = 0, quality = 1, degradeSteps = 0;
+      let renderFailed = false;
       const hideInReflection = [player.hand, stones.highlight, props.detailGroup];
 
       // Startskærmen ligger oven på lærredet, så klikket fanges på
@@ -220,7 +237,22 @@
           water.update(scene, hideInReflection, toWater < 40);
         }
 
-        post.render(dt, t);
+        // Fejler efterbehandlingen på en driver, jeg ikke kan afprøve, så
+        // falder vi tilbage til den simple visning i stedet for at fryse.
+        try {
+          post.render(dt, t);
+        } catch (err) {
+          if (!renderFailed) {
+            renderFailed = true;
+            O.diagnostics.fail('efterbehandling fejlede: ' + err.message +
+                               ' — skifter til simpel visning');
+            post = {
+              render: function () { renderer.setRenderTarget(null); renderer.render(scene, camera); },
+              resize: function () {}, setQuality: function () {},
+              bloom: { strength: 0 }, ssao: { enabled: false }, godrays: { enabled: false }
+            };
+          }
+        }
         O.debug.frames++;
 
         // Automatisk nedtrapning. Den skal reagere hurtigt — det hjælper
@@ -252,7 +284,7 @@
       O.debug = {
         frames: 0,
         scene: scene, camera: camera, renderer: renderer, player: player,
-        stones: stones, water: water, sky: sky, props: props, post: post,
+        stones: stones, water: water, sky: sky, props: props, post: post, wreck: wreck,
         terrain: terrain, cliffs: cliffs, hud: hud
       };
 

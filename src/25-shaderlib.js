@@ -124,6 +124,33 @@
       return mat;
     },
 
+    // Vandlinje: alt under overfladen bliver mørkt og begroet, lige over
+    // sidder en våd, mørk stribe, og over den igen en lys salt- og kalkrand.
+    // Det er dét, der får en ting til at ligge I vandet frem for PÅ det.
+    waterline: function (mat, waterLevel) {
+      const uniforms = { uWaterLine: { value: waterLevel } };
+      chain(mat, function (shader) {
+        shader.uniforms.uWaterLine = uniforms.uWaterLine;
+        shader.fragmentShader =
+          'uniform float uWaterLine;\n' +
+          shader.fragmentShader.replace(
+            '#include <map_fragment>',
+            `#include <map_fragment>
+             {
+               float wd = uWaterLine - vFogWorld.y;
+               float algae = smoothstep( -0.02, 0.38, wd );
+               diffuseColor.rgb = mix( diffuseColor.rgb,
+                                       diffuseColor.rgb * vec3( 0.62, 0.72, 0.52 ), algae * 0.85 );
+               float tide = exp( -abs( wd + 0.05 ) * 22.0 );
+               diffuseColor.rgb *= 1.0 - tide * 0.35;
+               float salt = exp( -abs( wd + 0.17 ) * 38.0 );
+               diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.70, 0.68, 0.62 ), salt * 0.28 );
+             }`
+          );
+      }, 'waterline');
+      return mat;
+    },
+
     // Kaustik: sollys brudt gennem bølgerne, som det tegner sig på bunden.
     caustics: function (mat, timeUniform, waterLevel) {
       const uniforms = {

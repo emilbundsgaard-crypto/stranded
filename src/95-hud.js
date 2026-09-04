@@ -99,7 +99,7 @@
         const current = O.quality.name;
         const label = (O.quality.presets[current] || {}).label || current;
         if (qNameEl) qNameEl.textContent = label.toLowerCase();
-        const buttons = document.querySelectorAll('.q-buttons button');
+        const buttons = document.querySelectorAll('.q-buttons button[data-q]');
         buttons.forEach(function (btn) {
           if (btn.dataset.q === current) btn.classList.add('on');
           btn.addEventListener('click', function (e) {
@@ -107,6 +107,25 @@
             O.quality.set(btn.dataset.q);
           });
         });
+
+        const safeBtn = $('qSafe');
+        if (safeBtn) {
+          if (O.safeMode) safeBtn.classList.add('on');
+          safeBtn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            const url = new URL(window.location.href);
+            if (O.safeMode) url.searchParams.delete('safe');
+            else url.searchParams.set('safe', '1');
+            window.location.href = url.toString();
+          });
+        }
+        const diagBtn = $('qDiag');
+        if (diagBtn) {
+          diagBtn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            O.diagnostics.show(true);
+          });
+        }
       }
     };
 

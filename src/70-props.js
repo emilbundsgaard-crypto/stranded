@@ -158,6 +158,8 @@
       const ch = O.world.height(cx, cz);
       const lush = O.world.lushness(cx, cz, ch);
       if (rnd() > lush) continue;
+      // Hold afstand til vraget — ellers står det i en sivskov.
+      if (O.wreckSpot && Math.hypot(cx - O.wreckSpot.x, cz - O.wreckSpot.z) < O.wreckSpot.r) continue;
       clusters++;
 
       const wetness = 1 - M.smoothstep(0.05, 1.5, ch);

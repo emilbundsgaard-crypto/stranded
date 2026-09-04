@@ -178,6 +178,30 @@
 
   O.buildWater = function (scene, renderer, camera, sky) {
     const size = O.config.worldSize;
+
+    // Sikker tilstand: en enkel, gennemsigtig flade uden de to ekstra
+    // render-pas. Den ser ikke ud af meget, men den kan ikke fejle.
+    if (O.safeMode) {
+      const simpleGeo = new THREE.PlaneGeometry(size, size, 8, 8);
+      simpleGeo.rotateX(-Math.PI / 2);
+      const simpleMat = new THREE.MeshStandardMaterial({
+        color: O.srgb(0x2f6f74), roughness: 0.12, metalness: 0.0,
+        transparent: true, opacity: 0.78, envMapIntensity: 1.0
+      });
+      const simple = new THREE.Mesh(simpleGeo, simpleMat);
+      simple.position.y = O.config.waterLevel - 0.02;
+      simple.renderOrder = 10;
+      simple.name = 'water';
+      scene.add(simple);
+      return {
+        mesh: simple,
+        uniforms: { uTime: { value: 0 }, uCamPos: { value: new THREE.Vector3() } },
+        update: function () {},
+        resize: function () {},
+        setQuality: function () {}
+      };
+    }
+
     const geo = new THREE.PlaneGeometry(size, size, 128, 128);
     geo.rotateX(-Math.PI / 2);
 

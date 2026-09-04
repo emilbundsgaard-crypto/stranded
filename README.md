@@ -10,6 +10,7 @@ lagdelte kløftvægge.
 
 ![Oasen](docs/oasen-spawn.png)
 ![Vandet i oasen](docs/oasen-vand.png)
+![Jeepen i det lave vand](docs/oasen-vrag.png)
 
 ## Prøv den
 
@@ -46,6 +47,23 @@ Byg enkeltfilen igen efter ændringer:
 ```bash
 node tools/build.js
 ```
+
+## Når det driller
+
+Bliver skærmen grå eller sort, er det næsten altid grafikhukommelsen, der er
+løbet tør, og browseren har taget WebGL-konteksten fra siden. To knapper på
+startskærmen hjælper:
+
+- **Sikker tilstand** (eller `?safe=1` i adressen) kører den enkleste vej
+  gennem motoren: ingen efterbehandling, ét almindeligt skyggekort, ingen
+  ekstra vandpas. Virker den, er grundmotoren i orden, og det er et af de
+  tunge lag, der fejler.
+- **Diagnostik** (eller `F2`) viser grafikkort, browser, opløsning, niveau og
+  alle fejl, siden har fanget — med en knap der kopierer hele rapporten.
+
+Rendering-løkken fanger desuden fejl undervejs: går efterbehandlingen i
+stykker på en driver, skifter spillet selv til simpel visning og skriver
+hvorfor, i stedet for at fryse.
 
 ## Grafikniveauer
 
@@ -109,11 +127,14 @@ som ligger i `vendor/`). Filerne indlæses i rækkefølge og deler navnerummet
 | `src/50-sky.js` | atmosfærisk himmel, miljøkort (IBL) bagt fra himlen, kaskade-skygger og fyldlys |
 | `src/60-water.js` | vandet: planspejling, brydning, absorption efter dybde, kaustik og skum |
 | `src/70-props.js` | græs i klynger, buske, nedfaldsklippe, grus, drivtømmer, bål, støv |
+| `src/75-wreck.js` | den gamle jeep i det lave vand: rust, algevækst, begravet hjul |
 | `src/80-stones.js` | de sten man kan samle op, og deres sjældenhed |
 | `src/85-player.js` | bevægelse, kollision, vadning, hovedbevægelse og hånden |
 | `src/90-audio.js` | vind, vand, skridt og opsamlingsklang syntetiseret med WebAudio |
 | `src/95-hud.js` | sigtekorn, prompt, lomme og beskeder |
 | `src/97-post.js` | render-pipeline: HDR-buffer, ambient occlusion, solstråler, bloom, filmisk gradering, SMAA |
+| `src/98-diagnostics.js` | fejlopsamling og rapport på skærmen (F2) |
+| `src/05-quality.js` | grafikniveauer, hukommelsesbudget og sikker tilstand |
 | `src/99-main.js` | opstart, indlæsningsskærm og renderløkke |
 
 Det tunge lag — hvad der faktisk giver dybden:
@@ -147,6 +168,11 @@ Det tunge lag — hvad der faktisk giver dybden:
 - **Bevoksningen** er fire arter — friskt græs, tørt strå, brede blade og tørre
   buske — sået i klynger, hvor arten følger fugtigheden. Ensartet bevoksning
   er en af de tydeligste røbere af noget computergenereret.
+- **Vraget i vandet** er ikke bare en model, der er skubbet ned under
+  overfladen. Materialet ved, hvor vandet står: alt under overfladen bliver
+  mørkt og begroet, lige over sidder en våd, mørk stribe, og over den igen en
+  lys saltrand. Kaustikken fra bølgerne løber hen over det nedsunkne. Det er
+  dét, der får noget til at ligge *i* vandet frem for *på* det.
 - **Ydelse**: alt græs, sten og grus tegnes som instanser, klipperne er flettet
   til ét mesh, skyggekortene tegnes én gang pr. billede (ikke også i vandets
   ekstra pas), og de to vandpas springer det mindste pynt over og slukkes

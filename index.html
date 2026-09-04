@@ -73,6 +73,28 @@
   .t-rar { display: block; margin-top: 2px; font-size: 10.5px; letter-spacing: .18em;
            text-transform: uppercase; color: rgba(231,215,189,.55); }
 
+  #diag {
+    display: none; position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    width: min(640px, 92vw); max-height: 76vh; z-index: 60; pointer-events: auto;
+    background: rgba(16,13,10,.94); border: 1px solid rgba(255,255,255,.16);
+    border-radius: 12px; padding: 14px 16px; backdrop-filter: blur(10px);
+  }
+  .diag-head {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 10px; font-size: 13px; letter-spacing: .06em;
+  }
+  .diag-head button {
+    font: inherit; font-size: 11.5px; margin-left: 6px; padding: 4px 10px;
+    border-radius: 6px; cursor: pointer; color: rgba(231,215,189,.85);
+    background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.14);
+  }
+  .diag-head button:hover { background: rgba(255,255,255,.16); }
+  #diagBody {
+    margin: 0; max-height: 58vh; overflow: auto; white-space: pre-wrap;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px;
+    line-height: 1.55; color: rgba(231,215,189,.82);
+  }
+  .diag-foot { margin-top: 10px; font-size: 11px; color: rgba(231,215,189,.4); }
   #stats {
     position: absolute; right: 20px; top: 16px; text-align: right;
     font-size: 11px; letter-spacing: .06em; color: rgba(231,215,189,.42);
@@ -146,36 +168,7 @@
   @media (max-width: 620px) {
     #overlayTitle { font-size: 30px; }
     #pocket { min-width: 168px; left: 12px; bottom: 12px; }
-    #stats {
-    position: absolute; right: 20px; top: 16px; text-align: right;
-    font-size: 11px; letter-spacing: .06em; color: rgba(231,215,189,.42);
-    font-variant-numeric: tabular-nums;
-  }
-  #quality { margin: 0 0 26px; }
-  .q-label {
-    display: block; font-size: 10px; letter-spacing: .2em; text-transform: uppercase;
-    color: rgba(231,215,189,.45); margin-bottom: 9px;
-  }
-  .q-buttons { display: flex; gap: 7px; justify-content: center; }
-  .q-buttons button {
-    padding: 6px 15px; border-radius: 7px; cursor: pointer;
-    font: inherit; font-size: 12.5px; letter-spacing: .04em;
-    color: rgba(231,215,189,.8); background: rgba(255,255,255,.06);
-    border: 1px solid rgba(255,255,255,.13); transition: all .15s ease;
-  }
-  .q-buttons button:hover { background: rgba(255,255,255,.13); color: #f4e6cc; }
-  .q-buttons button.on {
-    background: rgba(244,179,80,.18); border-color: rgba(244,179,80,.5); color: var(--warm);
-  }
-  .q-note { margin-top: 8px; font-size: 11.5px; color: rgba(231,215,189,.4); min-height: 15px; }
-  #lostBox {
-    display: none; max-width: 430px; text-align: center;
-    background: rgba(30,22,16,.7); border: 1px solid rgba(255,255,255,.12);
-    border-radius: 12px; padding: 22px 26px;
-  }
-  #lostBox h2 { margin: 0 0 8px; font-size: 19px; font-weight: 400; letter-spacing: .04em; }
-  #lostBox p { margin: 0 0 16px; font-size: 13px; line-height: 1.6; color: rgba(231,215,189,.65); }
-  #keys { display: none; }
+    #keys { display: none; }
   }
 </style>
 </head>
@@ -190,6 +183,17 @@
   <div id="pocket">
     <h3>Lomme <span id="invCount">0</span></h3>
     <ul id="invList"></ul>
+  </div>
+  <div id="diag">
+    <div class="diag-head">
+      <strong>Diagnostik</strong>
+      <span>
+        <button id="diagCopy">Kopiér rapport</button>
+        <button id="diagClose">Luk</button>
+      </span>
+    </div>
+    <pre id="diagBody"></pre>
+    <div class="diag-foot">F2 åbner og lukker · <code>?safe=1</code> i adressen kører den enkleste udgave</div>
   </div>
   <div id="stats"><span id="fps">–</span> fps &nbsp;·&nbsp; <span id="qName">middel</span></div>
   <div id="keys">
@@ -222,6 +226,10 @@
         <button data-q="medium">Middel</button>
         <button data-q="high">Høj</button>
         <button data-q="ultra">Ultra</button>
+      </div>
+      <div class="q-buttons" style="margin-top:7px">
+        <button id="qSafe" title="Den enkleste vej gennem motoren — uden efterbehandling, kaskade-skygger og vandpas">Sikker tilstand</button>
+        <button id="qDiag" title="Vis hvad der går galt">Diagnostik (F2)</button>
       </div>
       <div class="q-note" id="qNote"></div>
     </div>
@@ -268,11 +276,13 @@
 <script src="src/50-sky.js"></script>
 <script src="src/60-water.js"></script>
 <script src="src/70-props.js"></script>
+<script src="src/75-wreck.js"></script>
 <script src="src/80-stones.js"></script>
 <script src="src/85-player.js"></script>
 <script src="src/90-audio.js"></script>
 <script src="src/95-hud.js"></script>
 <script src="src/97-post.js"></script>
+<script src="src/98-diagnostics.js"></script>
 <script src="src/99-main.js"></script>
 <script>
   if (typeof THREE === 'undefined') {
