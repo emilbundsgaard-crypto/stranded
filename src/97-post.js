@@ -87,6 +87,12 @@
     }
   `;
 
+  // To fælder gemmer sig her, og begge giver et ensfarvet billede på
+  // Apple-GPU'er, mens en software-renderer klarer dem uden at kny:
+  //   1) en sampler uden tekstur bundet er UNDEFINED — ikke sort
+  //   2) pow( x, 0.0 ) er UNDEFINED i GLSL — kan give NaN, og NaN ganget
+  //      på farven farver hele skærmen ens.
+  // Derfor: altid en rigtig tekstur bundet, og mix i stedet for pow.
   const COMPOSITE_FRAG = `
     uniform sampler2D tScene;
     uniform sampler2D tAO;
@@ -94,9 +100,8 @@
     varying vec2 vUv;
     void main() {
       vec4 c = texture2D( tScene, vUv );
-      float ao = texture2D( tAO, vUv ).r;
-      ao = pow( clamp( ao, 0.0, 1.0 ), uStrength );
-      c.rgb *= ao;
+      float ao = clamp( texture2D( tAO, vUv ).r, 0.0, 1.0 );
+      c.rgb *= mix( 1.0, ao, clamp( uStrength, 0.0, 1.0 ) );
       gl_FragColor = c;
     }
   `;
@@ -205,17 +210,29 @@
     const hdr = renderer.capabilities.isWebGL2;
     const hdrType = hdr ? THREE.HalfFloatType : THREE.UnsignedByteType;
 
-    // Scenebufferen: HDR farve + dybde. Dybden er gratis her — den skrives
-    // alligevel, mens scenen tegnes, og bruges bagefter til AO og solstråler.
-    let depthTexture = new THREE.DepthTexture(W, H);
-    depthTexture.type = THREE.UnsignedIntType;
-    depthTexture.minFilter = THREE.NearestFilter;
-    depthTexture.magFilter = THREE.NearestFilter;
+    // Bindes overalt hvor en tekstur ellers ville være null.
+    const whiteTex = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
+    whiteTex.needsUpdate = true;
+    const blackTex = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
+    blackTex.needsUpdate = true;
+
+    // Dybdeteksturen laves KUN hvis ambient occlusion eller solstråler
+    // skal bruge den. En dybdetekstur hæftet på en half-float-buffer er
+    // ikke understøttet alle steder, og på de lave niveauer bruges den
+    // alligevel ikke til noget.
+    const needsDepth = (Q.ssao > 0) || Q.godrays;
+    let depthTexture = null;
+    if (needsDepth) {
+      depthTexture = new THREE.DepthTexture(W, H);
+      depthTexture.type = THREE.UnsignedIntType;
+      depthTexture.minFilter = THREE.NearestFilter;
+      depthTexture.magFilter = THREE.NearestFilter;
+    }
 
     const sceneRT = new THREE.WebGLRenderTarget(W, H, {
       minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
       format: THREE.RGBAFormat, encoding: THREE.LinearEncoding,
-      type: hdrType, depthTexture: depthTexture, depthBuffer: true
+      type: hdrType, depthTexture: depthTexture || undefined, depthBuffer: true
     });
 
     function makeRT(scale, type) {
@@ -247,7 +264,7 @@
     }
 
     const ssaoMat = quadMaterial(SSAO_FRAG, {
-      tDepth: { value: depthTexture },
+      tDepth: { value: depthTexture || blackTex },
       uProjInv: { value: new THREE.Matrix4() },
       uProj: { value: new THREE.Matrix4() },
       uResolution: { value: new THREE.Vector2(W * (aoScale || 0.5), H * (aoScale || 0.5)) },
@@ -258,8 +275,8 @@
     }, true);
 
     const blurMat = quadMaterial(BLUR_FRAG, {
-      tAO: { value: null },
-      tDepth: { value: depthTexture },
+      tAO: { value: whiteTex },
+      tDepth: { value: depthTexture || blackTex },
       uDirection: { value: new THREE.Vector2(1, 0) },
       uTexel: { value: new THREE.Vector2(1 / Math.max(1, W * (aoScale || 0.5)),
                                          1 / Math.max(1, H * (aoScale || 0.5))) }
@@ -267,13 +284,13 @@
 
     const compositeMat = quadMaterial(COMPOSITE_FRAG, {
       tScene: { value: sceneRT.texture },
-      tAO: { value: aoRT ? aoRT.texture : null },
+      tAO: { value: aoRT ? aoRT.texture : whiteTex },
       uStrength: { value: 1.0 }
     });
 
     const godrayMat = quadMaterial(GODRAY_FRAG, {
       tScene: { value: sceneRT.texture },
-      tDepth: { value: depthTexture },
+      tDepth: { value: depthTexture || blackTex },
       uSunUv: { value: new THREE.Vector2(0.5, 0.5) },
       uDensity: { value: 0.75 },
       uDecay: { value: 0.94 },
@@ -286,7 +303,7 @@
       uniform sampler2D tAdd;
       varying vec2 vUv;
       void main() { gl_FragColor = vec4( texture2D( tAdd, vUv ).rgb, 1.0 ); }
-    `, { tAdd: { value: godrayRT ? godrayRT.texture : null } });
+    `, { tAdd: { value: godrayRT ? godrayRT.texture : blackTex } });
     addMat.blending = THREE.AdditiveBlending;
     addMat.transparent = true;
 
@@ -376,16 +393,18 @@
 
       // Dybdeteksturen kan ikke bare skifte størrelse — den skal bygges om,
       // ellers passer den ikke til bufferen og alting bliver sort.
-      depthTexture.dispose();
-      depthTexture = new THREE.DepthTexture(W, H);
-      depthTexture.type = THREE.UnsignedIntType;
-      depthTexture.minFilter = THREE.NearestFilter;
-      depthTexture.magFilter = THREE.NearestFilter;
-      sceneRT.depthTexture = depthTexture;
+      if (depthTexture) {
+        depthTexture.dispose();
+        depthTexture = new THREE.DepthTexture(W, H);
+        depthTexture.type = THREE.UnsignedIntType;
+        depthTexture.minFilter = THREE.NearestFilter;
+        depthTexture.magFilter = THREE.NearestFilter;
+        sceneRT.depthTexture = depthTexture;
+        ssaoMat.uniforms.tDepth.value = depthTexture;
+        blurMat.uniforms.tDepth.value = depthTexture;
+        godrayMat.uniforms.tDepth.value = depthTexture;
+      }
       sceneRT.setSize(W, H);
-      ssaoMat.uniforms.tDepth.value = depthTexture;
-      blurMat.uniforms.tDepth.value = depthTexture;
-      godrayMat.uniforms.tDepth.value = depthTexture;
 
       hdrRT.setSize(W, H);
       if (ldrRT) ldrRT.setSize(W, H);

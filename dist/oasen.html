@@ -2,7 +2,7 @@
 <html lang="da">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Oasen i kløften</title>
 <style>
   :root {
@@ -17,7 +17,7 @@
     font-family: "Avenir Next", "Segoe UI", Inter, system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
   }
-  canvas { display: block; width: 100%; height: 100%; }
+  canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 
   /* ---------- HUD ---------- */
   #hud { position: fixed; inset: 0; pointer-events: none; transition: opacity .35s ease; }
@@ -43,6 +43,27 @@
     border-radius: 4px; background: rgba(255,255,255,.16); font-size: 11.5px;
   }
 
+  /* Berøringsstyring — vises kun på skærme man rører ved */
+  #stick {
+    position: absolute; width: 132px; height: 132px; border-radius: 50%;
+    border: 1.5px solid rgba(255,255,255,.16); background: rgba(20,16,12,.22);
+    display: none; transform: translate(-50%, -50%); pointer-events: none;
+  }
+  #stickKnob {
+    position: absolute; left: 50%; top: 50%; width: 54px; height: 54px;
+    margin: -27px 0 0 -27px; border-radius: 50%;
+    background: rgba(244,179,80,.30); border: 1.5px solid rgba(244,179,80,.55);
+  }
+  #btnPick {
+    position: absolute; right: 30px; bottom: 118px; width: 84px; height: 84px;
+    border-radius: 50%; display: none; pointer-events: auto; cursor: pointer;
+    font: inherit; font-size: 19px; letter-spacing: .06em;
+    color: rgba(244,230,204,.95); background: rgba(244,179,80,.22);
+    border: 1.5px solid rgba(244,179,80,.6);
+  }
+  #btnPick:active { background: rgba(244,179,80,.45); }
+  body.touch #keys { display: none; }
+  body.touch #btnPick.on { display: block; }
   #pocket {
     position: absolute; left: 22px; bottom: 20px; min-width: 208px;
     padding: 13px 15px 11px; border-radius: 12px;
@@ -95,6 +116,14 @@
     line-height: 1.55; color: rgba(231,215,189,.82);
   }
   .diag-foot { margin-top: 10px; font-size: 11px; color: rgba(231,215,189,.4); }
+  #diagOpen {
+    position: absolute; left: 20px; top: 16px; width: 26px; height: 26px;
+    border-radius: 50%; cursor: pointer; pointer-events: auto;
+    font: inherit; font-size: 13px; line-height: 1;
+    color: rgba(231,215,189,.55); background: rgba(20,16,12,.45);
+    border: 1px solid rgba(255,255,255,.14);
+  }
+  #diagOpen:hover { color: #f4e6cc; background: rgba(20,16,12,.75); }
   #stats {
     position: absolute; right: 20px; top: 16px; text-align: right;
     font-size: 11px; letter-spacing: .06em; color: rgba(231,215,189,.42);
@@ -167,7 +196,28 @@
 
   @media (max-width: 620px) {
     #overlayTitle { font-size: 30px; }
-    #pocket { min-width: 168px; left: 12px; bottom: 12px; }
+    /* Berøringsstyring — vises kun på skærme man rører ved */
+  #stick {
+    position: absolute; width: 132px; height: 132px; border-radius: 50%;
+    border: 1.5px solid rgba(255,255,255,.16); background: rgba(20,16,12,.22);
+    display: none; transform: translate(-50%, -50%); pointer-events: none;
+  }
+  #stickKnob {
+    position: absolute; left: 50%; top: 50%; width: 54px; height: 54px;
+    margin: -27px 0 0 -27px; border-radius: 50%;
+    background: rgba(244,179,80,.30); border: 1.5px solid rgba(244,179,80,.55);
+  }
+  #btnPick {
+    position: absolute; right: 30px; bottom: 118px; width: 84px; height: 84px;
+    border-radius: 50%; display: none; pointer-events: auto; cursor: pointer;
+    font: inherit; font-size: 19px; letter-spacing: .06em;
+    color: rgba(244,230,204,.95); background: rgba(244,179,80,.22);
+    border: 1.5px solid rgba(244,179,80,.6);
+  }
+  #btnPick:active { background: rgba(244,179,80,.45); }
+  body.touch #keys { display: none; }
+  body.touch #btnPick.on { display: block; }
+  #pocket { min-width: 168px; left: 12px; bottom: 12px; }
     #keys { display: none; }
   }
 </style>
@@ -180,6 +230,8 @@
   <div id="crosshair"></div>
   <div id="prompt"></div>
   <div id="toast"></div>
+  <div id="stick"><div id="stickKnob"></div></div>
+  <button id="btnPick">E</button>
   <div id="pocket">
     <h3>Lomme <span id="invCount">0</span></h3>
     <ul id="invList"></ul>
@@ -195,6 +247,7 @@
     <pre id="diagBody"></pre>
     <div class="diag-foot">F2 åbner og lukker · <code>?safe=1</code> i adressen kører den enkleste udgave</div>
   </div>
+  <button id="diagOpen" title="Diagnostik (F2)">?</button>
   <div id="stats"><span id="fps">–</span> fps &nbsp;·&nbsp; <span id="qName">middel</span></div>
   <div id="keys">
     <div><b>WASD</b> gå &nbsp; <b>Shift</b> løb</div>
@@ -7158,6 +7211,65 @@ uniform float shadowFar;
       state.lockDenied = true;   // så falder vi tilbage til træk-styring
     });
 
+    /* ---------- Berøring: venstre halvdel styrer, højre halvdel kigger ----
+       Uden det her kan man hverken gå eller dreje på en telefon — der er
+       hverken tastatur eller musemarkør at låse. --------------------------- */
+    const touch = { moveId: null, x0: 0, y0: 0, dx: 0, dy: 0, lookId: null, lx: 0, ly: 0 };
+    state.isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+
+    function touchStart(e) {
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const t = e.changedTouches[i];
+        if (t.clientX < window.innerWidth * 0.5 && touch.moveId === null) {
+          touch.moveId = t.identifier;
+          touch.x0 = t.clientX; touch.y0 = t.clientY;
+          touch.dx = 0; touch.dy = 0;
+          if (state.onStick) state.onStick(true, t.clientX, t.clientY, 0, 0);
+        } else if (touch.lookId === null) {
+          touch.lookId = t.identifier;
+          touch.lx = t.clientX; touch.ly = t.clientY;
+        }
+      }
+      state.started = true;
+      if (e.cancelable) e.preventDefault();
+    }
+
+    function touchMove(e) {
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const t = e.changedTouches[i];
+        if (t.identifier === touch.moveId) {
+          touch.dx = t.clientX - touch.x0;
+          touch.dy = t.clientY - touch.y0;
+          const len = Math.hypot(touch.dx, touch.dy);
+          const max = 64;
+          if (len > max) { touch.dx *= max / len; touch.dy *= max / len; }
+          if (state.onStick) state.onStick(true, touch.x0, touch.y0, touch.dx, touch.dy);
+        } else if (t.identifier === touch.lookId) {
+          look(t.clientX - touch.lx, t.clientY - touch.ly, 1.7);
+          touch.lx = t.clientX; touch.ly = t.clientY;
+        }
+      }
+      if (e.cancelable) e.preventDefault();
+    }
+
+    function touchEnd(e) {
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const t = e.changedTouches[i];
+        if (t.identifier === touch.moveId) {
+          touch.moveId = null; touch.dx = 0; touch.dy = 0;
+          if (state.onStick) state.onStick(false);
+        } else if (t.identifier === touch.lookId) {
+          touch.lookId = null;
+        }
+      }
+    }
+
+    dom.addEventListener('touchstart', touchStart, { passive: false });
+    dom.addEventListener('touchmove', touchMove, { passive: false });
+    window.addEventListener('touchend', touchEnd);
+    window.addEventListener('touchcancel', touchEnd);
+    state.touch = touch;
+
     state.requestLock = function () {
       if (!state.started) state.suppressClick = true;
       state.started = true;
@@ -7320,8 +7432,28 @@ uniform float shadowFar;
       if (keys['KeyS'] || keys['ArrowDown']) move.sub(forward);
       if (keys['KeyD'] || keys['ArrowRight']) move.add(right);
       if (keys['KeyA'] || keys['ArrowLeft']) move.sub(right);
+
+      // Styrepinden: hvor langt fingeren er trukket bestemmer farten, så man
+      // kan liste og løbe med samme tommel.
+      let stickPush = 0;
+      if (touch.moveId !== null) {
+        const sx = M.clamp(touch.dx / 64, -1, 1);
+        const sy = M.clamp(touch.dy / 64, -1, 1);
+        stickPush = Math.min(1, Math.hypot(sx, sy));
+        if (stickPush > 0.08) {
+          move.add(forward.clone().multiplyScalar(-sy));
+          move.add(right.clone().multiplyScalar(sx));
+        }
+      }
+
       const moving = move.lengthSq() > 0.0001;
-      if (moving) move.normalize().multiplyScalar(speed);
+      if (moving) {
+        move.normalize();
+        const push = stickPush > 0.08
+          ? M.lerp(WALK * 0.45, sprint ? RUN : RUN * 0.92, M.smoothstep(0.25, 0.98, stickPush))
+          : speed;
+        move.multiplyScalar(touch.moveId !== null ? Math.min(push, RUN) : speed);
+      }
 
       // Blødt op og ned i fart, så det ikke føles klodset.
       state.vel.lerp(move, 1 - Math.pow(0.0009, dt));
@@ -7559,6 +7691,8 @@ uniform float shadowFar;
         overlay.classList.add('hidden');
       },
       setPrompt: function (type) {
+        const pick = $('btnPick');
+        if (pick) pick.classList.toggle('on', !!type);
         if (!type) { prompt.classList.remove('show'); return; }
         prompt.classList.add('show');
         prompt.innerHTML = '<b>E</b> Saml op &nbsp;<span style="color:' + type.hud + '">' + type.name + '</span>';
@@ -7611,6 +7745,29 @@ uniform float shadowFar;
         }
       },
 
+      // Berøringsskærm: vis styrepind og knap, skjul tastaturhjælpen.
+      initTouch: function (player, onPick) {
+        if (!player.isTouch) return;
+        document.body.classList.add('touch');
+        const stick = $('stick'), knob = $('stickKnob'), pick = $('btnPick');
+        player.onStick = function (active, x, y, dx, dy) {
+          if (!stick) return;
+          stick.style.display = active ? 'block' : 'none';
+          if (!active) return;
+          stick.style.left = x + 'px';
+          stick.style.top = y + 'px';
+          knob.style.transform = 'translate(' + (dx || 0) + 'px,' + (dy || 0) + 'px)';
+        };
+        if (pick) {
+          pick.addEventListener('touchstart', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            onPick();
+          }, { passive: false });
+          pick.addEventListener('click', function (e) { e.stopPropagation(); onPick(); });
+        }
+      },
+
       initQualityButtons: function () {
         const current = O.quality.name;
         const label = (O.quality.presets[current] || {}).label || current;
@@ -7618,6 +7775,7 @@ uniform float shadowFar;
         const buttons = document.querySelectorAll('.q-buttons button[data-q]');
         buttons.forEach(function (btn) {
           if (btn.dataset.q === current) btn.classList.add('on');
+          btn.addEventListener('touchstart', function (e) { e.stopPropagation(); }, { passive: true });
           btn.addEventListener('click', function (e) {
             e.stopPropagation();
             O.quality.set(btn.dataset.q);
@@ -7742,6 +7900,12 @@ uniform float shadowFar;
     }
   `;
 
+  // To fælder gemmer sig her, og begge giver et ensfarvet billede på
+  // Apple-GPU'er, mens en software-renderer klarer dem uden at kny:
+  //   1) en sampler uden tekstur bundet er UNDEFINED — ikke sort
+  //   2) pow( x, 0.0 ) er UNDEFINED i GLSL — kan give NaN, og NaN ganget
+  //      på farven farver hele skærmen ens.
+  // Derfor: altid en rigtig tekstur bundet, og mix i stedet for pow.
   const COMPOSITE_FRAG = `
     uniform sampler2D tScene;
     uniform sampler2D tAO;
@@ -7749,9 +7913,8 @@ uniform float shadowFar;
     varying vec2 vUv;
     void main() {
       vec4 c = texture2D( tScene, vUv );
-      float ao = texture2D( tAO, vUv ).r;
-      ao = pow( clamp( ao, 0.0, 1.0 ), uStrength );
-      c.rgb *= ao;
+      float ao = clamp( texture2D( tAO, vUv ).r, 0.0, 1.0 );
+      c.rgb *= mix( 1.0, ao, clamp( uStrength, 0.0, 1.0 ) );
       gl_FragColor = c;
     }
   `;
@@ -7860,17 +8023,29 @@ uniform float shadowFar;
     const hdr = renderer.capabilities.isWebGL2;
     const hdrType = hdr ? THREE.HalfFloatType : THREE.UnsignedByteType;
 
-    // Scenebufferen: HDR farve + dybde. Dybden er gratis her — den skrives
-    // alligevel, mens scenen tegnes, og bruges bagefter til AO og solstråler.
-    let depthTexture = new THREE.DepthTexture(W, H);
-    depthTexture.type = THREE.UnsignedIntType;
-    depthTexture.minFilter = THREE.NearestFilter;
-    depthTexture.magFilter = THREE.NearestFilter;
+    // Bindes overalt hvor en tekstur ellers ville være null.
+    const whiteTex = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
+    whiteTex.needsUpdate = true;
+    const blackTex = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
+    blackTex.needsUpdate = true;
+
+    // Dybdeteksturen laves KUN hvis ambient occlusion eller solstråler
+    // skal bruge den. En dybdetekstur hæftet på en half-float-buffer er
+    // ikke understøttet alle steder, og på de lave niveauer bruges den
+    // alligevel ikke til noget.
+    const needsDepth = (Q.ssao > 0) || Q.godrays;
+    let depthTexture = null;
+    if (needsDepth) {
+      depthTexture = new THREE.DepthTexture(W, H);
+      depthTexture.type = THREE.UnsignedIntType;
+      depthTexture.minFilter = THREE.NearestFilter;
+      depthTexture.magFilter = THREE.NearestFilter;
+    }
 
     const sceneRT = new THREE.WebGLRenderTarget(W, H, {
       minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
       format: THREE.RGBAFormat, encoding: THREE.LinearEncoding,
-      type: hdrType, depthTexture: depthTexture, depthBuffer: true
+      type: hdrType, depthTexture: depthTexture || undefined, depthBuffer: true
     });
 
     function makeRT(scale, type) {
@@ -7902,7 +8077,7 @@ uniform float shadowFar;
     }
 
     const ssaoMat = quadMaterial(SSAO_FRAG, {
-      tDepth: { value: depthTexture },
+      tDepth: { value: depthTexture || blackTex },
       uProjInv: { value: new THREE.Matrix4() },
       uProj: { value: new THREE.Matrix4() },
       uResolution: { value: new THREE.Vector2(W * (aoScale || 0.5), H * (aoScale || 0.5)) },
@@ -7913,8 +8088,8 @@ uniform float shadowFar;
     }, true);
 
     const blurMat = quadMaterial(BLUR_FRAG, {
-      tAO: { value: null },
-      tDepth: { value: depthTexture },
+      tAO: { value: whiteTex },
+      tDepth: { value: depthTexture || blackTex },
       uDirection: { value: new THREE.Vector2(1, 0) },
       uTexel: { value: new THREE.Vector2(1 / Math.max(1, W * (aoScale || 0.5)),
                                          1 / Math.max(1, H * (aoScale || 0.5))) }
@@ -7922,13 +8097,13 @@ uniform float shadowFar;
 
     const compositeMat = quadMaterial(COMPOSITE_FRAG, {
       tScene: { value: sceneRT.texture },
-      tAO: { value: aoRT ? aoRT.texture : null },
+      tAO: { value: aoRT ? aoRT.texture : whiteTex },
       uStrength: { value: 1.0 }
     });
 
     const godrayMat = quadMaterial(GODRAY_FRAG, {
       tScene: { value: sceneRT.texture },
-      tDepth: { value: depthTexture },
+      tDepth: { value: depthTexture || blackTex },
       uSunUv: { value: new THREE.Vector2(0.5, 0.5) },
       uDensity: { value: 0.75 },
       uDecay: { value: 0.94 },
@@ -7941,7 +8116,7 @@ uniform float shadowFar;
       uniform sampler2D tAdd;
       varying vec2 vUv;
       void main() { gl_FragColor = vec4( texture2D( tAdd, vUv ).rgb, 1.0 ); }
-    `, { tAdd: { value: godrayRT ? godrayRT.texture : null } });
+    `, { tAdd: { value: godrayRT ? godrayRT.texture : blackTex } });
     addMat.blending = THREE.AdditiveBlending;
     addMat.transparent = true;
 
@@ -8031,16 +8206,18 @@ uniform float shadowFar;
 
       // Dybdeteksturen kan ikke bare skifte størrelse — den skal bygges om,
       // ellers passer den ikke til bufferen og alting bliver sort.
-      depthTexture.dispose();
-      depthTexture = new THREE.DepthTexture(W, H);
-      depthTexture.type = THREE.UnsignedIntType;
-      depthTexture.minFilter = THREE.NearestFilter;
-      depthTexture.magFilter = THREE.NearestFilter;
-      sceneRT.depthTexture = depthTexture;
+      if (depthTexture) {
+        depthTexture.dispose();
+        depthTexture = new THREE.DepthTexture(W, H);
+        depthTexture.type = THREE.UnsignedIntType;
+        depthTexture.minFilter = THREE.NearestFilter;
+        depthTexture.magFilter = THREE.NearestFilter;
+        sceneRT.depthTexture = depthTexture;
+        ssaoMat.uniforms.tDepth.value = depthTexture;
+        blurMat.uniforms.tDepth.value = depthTexture;
+        godrayMat.uniforms.tDepth.value = depthTexture;
+      }
       sceneRT.setSize(W, H);
-      ssaoMat.uniforms.tDepth.value = depthTexture;
-      blurMat.uniforms.tDepth.value = depthTexture;
-      godrayMat.uniforms.tDepth.value = depthTexture;
 
       hdrRT.setSize(W, H);
       if (ldrRT) ldrRT.setSize(W, H);
@@ -8198,6 +8375,21 @@ uniform float shadowFar;
       window.addEventListener('keydown', function (e) {
         if (e.code === 'F2') { e.preventDefault(); O.diagnostics.toggle(); }
       });
+
+      // Knappen skal kunne nås, også efter startskærmen er væk — ellers kan
+      // man ikke fortælle mig noget, når billedet er gået i stykker.
+      const opener = document.getElementById('diagOpen');
+      if (opener) {
+        opener.addEventListener('click', function (e) {
+          e.stopPropagation();
+          O.diagnostics.toggle();
+        });
+        opener.addEventListener('touchstart', function (e) {
+          e.stopPropagation();
+          e.preventDefault();
+          O.diagnostics.toggle();
+        }, { passive: false });
+      }
 
       window.addEventListener('error', function (e) {
         add('fejl', (e.message || 'ukendt fejl') +
@@ -8366,11 +8558,52 @@ uniform float shadowFar;
       let stepDistance = 0;
       let frames = 0, frameAcc = 0, reflectSkip = 0, quality = 1, degradeSteps = 0;
       let renderFailed = false;
+      let bypassedPost = false, bypassedWater = false;
+
+      function directRenderer() {
+        return {
+          render: function () { renderer.setRenderTarget(null); renderer.render(scene, camera); },
+          resize: function () {}, setQuality: function () {},
+          bloom: { strength: 0 }, ssao: { enabled: false }, godrays: { enabled: false }
+        };
+      }
+
+      // Læser nogle få pixels fra det færdige billede og svarer på, hvor
+      // meget de er forskellige. Nul betyder: alt har præcis samme farve.
+      const probe = new Uint8Array(4);
+      function imageSpread() {
+        try {
+          const gl = renderer.getContext();
+          const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
+          const pts = [[0.2, 0.25], [0.5, 0.25], [0.8, 0.25],
+                       [0.2, 0.5], [0.5, 0.5], [0.8, 0.5],
+                       [0.2, 0.78], [0.5, 0.78], [0.8, 0.78]];
+          let lo = [255, 255, 255], hi = [0, 0, 0];
+          for (const pt of pts) {
+            gl.readPixels(Math.floor(pt[0] * w), Math.floor(pt[1] * h), 1, 1,
+                          gl.RGBA, gl.UNSIGNED_BYTE, probe);
+            for (let c = 0; c < 3; c++) {
+              if (probe[c] < lo[c]) lo[c] = probe[c];
+              if (probe[c] > hi[c]) hi[c] = probe[c];
+            }
+          }
+          return Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]);
+        } catch (e) {
+          return -1;
+        }
+      }
       const hideInReflection = [player.hand, stones.highlight, props.detailGroup];
 
       // Startskærmen ligger oven på lærredet, så klikket fanges på
       // dokumentet — ellers ville man aldrig komme i gang.
-      document.addEventListener('mousedown', function () {
+      // Et tryk på en knap må ikke også starte spillet — ellers skifter man
+      // kvalitet og går ind i kløften i samme bevægelse.
+      function onButton(e) {
+        return !!(e.target && e.target.closest && e.target.closest('button'));
+      }
+
+      document.addEventListener('mousedown', function (e) {
+        if (onButton(e)) return;
         if (player.locked) return;
         const first = !player.started;
         player.requestLock();
@@ -8384,6 +8617,14 @@ uniform float shadowFar;
 
       // Klik uden pointer lock (fx i en indlejret ramme) samler også op.
       player.onClick = tryPickup;
+      hud.initTouch(player, tryPickup);
+
+      // På en telefon starter spillet ved den første berøring.
+      document.addEventListener('touchstart', function (e) {
+        if (onButton(e)) return;
+        if (!player.started) { player.started = true; audio.start(); }
+        hud.hideOverlay();
+      }, { passive: true });
 
       player.onLockChange = function (locked, was) {
         if (locked) hud.hideOverlay();
@@ -8475,14 +8716,32 @@ uniform float shadowFar;
             renderFailed = true;
             O.diagnostics.fail('efterbehandling fejlede: ' + err.message +
                                ' — skifter til simpel visning');
-            post = {
-              render: function () { renderer.setRenderTarget(null); renderer.render(scene, camera); },
-              resize: function () {}, setQuality: function () {},
-              bloom: { strength: 0 }, ssao: { enabled: false }, godrays: { enabled: false }
-            };
+            post = directRenderer();
           }
         }
         O.debug.frames++;
+
+        // Vagthund: et billede kan sagtens blive tegnet uden en eneste fejl
+        // og alligevel være ensfarvet — det sker, når en driver behandler
+        // noget i pipelinen anderledes end min. Er billedet fladt, går vi
+        // uden om efterbehandlingen i stedet for at lade brugeren stirre på
+        // en grå skærm.
+        if (O.debug.frames === 5 || O.debug.frames === 40) {
+          const spread = imageSpread();
+          O.diagnostics.note('billedvariation ved billede ' + O.debug.frames + ': ' + spread);
+          if (spread >= 0 && spread < 4) {
+            if (!bypassedPost) {
+              bypassedPost = true;
+              O.diagnostics.fail('billedet var ensfarvet — springer efterbehandlingen over');
+              post = directRenderer();
+            } else if (!bypassedWater) {
+              bypassedWater = true;
+              O.diagnostics.fail('stadig ensfarvet — slukker også vandets ekstra pas');
+              water.update = function () {};
+              O.diagnostics.show(true);
+            }
+          }
+        }
 
         // Automatisk nedtrapning. Den skal reagere hurtigt — det hjælper
         // ingen at opdage efter ti sekunder, at maskinen ikke kan følge med.

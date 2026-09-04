@@ -97,6 +97,65 @@
       state.lockDenied = true;   // så falder vi tilbage til træk-styring
     });
 
+    /* ---------- Berøring: venstre halvdel styrer, højre halvdel kigger ----
+       Uden det her kan man hverken gå eller dreje på en telefon — der er
+       hverken tastatur eller musemarkør at låse. --------------------------- */
+    const touch = { moveId: null, x0: 0, y0: 0, dx: 0, dy: 0, lookId: null, lx: 0, ly: 0 };
+    state.isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+
+    function touchStart(e) {
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const t = e.changedTouches[i];
+        if (t.clientX < window.innerWidth * 0.5 && touch.moveId === null) {
+          touch.moveId = t.identifier;
+          touch.x0 = t.clientX; touch.y0 = t.clientY;
+          touch.dx = 0; touch.dy = 0;
+          if (state.onStick) state.onStick(true, t.clientX, t.clientY, 0, 0);
+        } else if (touch.lookId === null) {
+          touch.lookId = t.identifier;
+          touch.lx = t.clientX; touch.ly = t.clientY;
+        }
+      }
+      state.started = true;
+      if (e.cancelable) e.preventDefault();
+    }
+
+    function touchMove(e) {
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const t = e.changedTouches[i];
+        if (t.identifier === touch.moveId) {
+          touch.dx = t.clientX - touch.x0;
+          touch.dy = t.clientY - touch.y0;
+          const len = Math.hypot(touch.dx, touch.dy);
+          const max = 64;
+          if (len > max) { touch.dx *= max / len; touch.dy *= max / len; }
+          if (state.onStick) state.onStick(true, touch.x0, touch.y0, touch.dx, touch.dy);
+        } else if (t.identifier === touch.lookId) {
+          look(t.clientX - touch.lx, t.clientY - touch.ly, 1.7);
+          touch.lx = t.clientX; touch.ly = t.clientY;
+        }
+      }
+      if (e.cancelable) e.preventDefault();
+    }
+
+    function touchEnd(e) {
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const t = e.changedTouches[i];
+        if (t.identifier === touch.moveId) {
+          touch.moveId = null; touch.dx = 0; touch.dy = 0;
+          if (state.onStick) state.onStick(false);
+        } else if (t.identifier === touch.lookId) {
+          touch.lookId = null;
+        }
+      }
+    }
+
+    dom.addEventListener('touchstart', touchStart, { passive: false });
+    dom.addEventListener('touchmove', touchMove, { passive: false });
+    window.addEventListener('touchend', touchEnd);
+    window.addEventListener('touchcancel', touchEnd);
+    state.touch = touch;
+
     state.requestLock = function () {
       if (!state.started) state.suppressClick = true;
       state.started = true;
@@ -259,8 +318,28 @@
       if (keys['KeyS'] || keys['ArrowDown']) move.sub(forward);
       if (keys['KeyD'] || keys['ArrowRight']) move.add(right);
       if (keys['KeyA'] || keys['ArrowLeft']) move.sub(right);
+
+      // Styrepinden: hvor langt fingeren er trukket bestemmer farten, så man
+      // kan liste og løbe med samme tommel.
+      let stickPush = 0;
+      if (touch.moveId !== null) {
+        const sx = M.clamp(touch.dx / 64, -1, 1);
+        const sy = M.clamp(touch.dy / 64, -1, 1);
+        stickPush = Math.min(1, Math.hypot(sx, sy));
+        if (stickPush > 0.08) {
+          move.add(forward.clone().multiplyScalar(-sy));
+          move.add(right.clone().multiplyScalar(sx));
+        }
+      }
+
       const moving = move.lengthSq() > 0.0001;
-      if (moving) move.normalize().multiplyScalar(speed);
+      if (moving) {
+        move.normalize();
+        const push = stickPush > 0.08
+          ? M.lerp(WALK * 0.45, sprint ? RUN : RUN * 0.92, M.smoothstep(0.25, 0.98, stickPush))
+          : speed;
+        move.multiplyScalar(touch.moveId !== null ? Math.min(push, RUN) : speed);
+      }
 
       // Blødt op og ned i fart, så det ikke føles klodset.
       state.vel.lerp(move, 1 - Math.pow(0.0009, dt));

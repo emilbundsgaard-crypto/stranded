@@ -43,6 +43,8 @@
         overlay.classList.add('hidden');
       },
       setPrompt: function (type) {
+        const pick = $('btnPick');
+        if (pick) pick.classList.toggle('on', !!type);
         if (!type) { prompt.classList.remove('show'); return; }
         prompt.classList.add('show');
         prompt.innerHTML = '<b>E</b> Saml op &nbsp;<span style="color:' + type.hud + '">' + type.name + '</span>';
@@ -95,6 +97,29 @@
         }
       },
 
+      // Berøringsskærm: vis styrepind og knap, skjul tastaturhjælpen.
+      initTouch: function (player, onPick) {
+        if (!player.isTouch) return;
+        document.body.classList.add('touch');
+        const stick = $('stick'), knob = $('stickKnob'), pick = $('btnPick');
+        player.onStick = function (active, x, y, dx, dy) {
+          if (!stick) return;
+          stick.style.display = active ? 'block' : 'none';
+          if (!active) return;
+          stick.style.left = x + 'px';
+          stick.style.top = y + 'px';
+          knob.style.transform = 'translate(' + (dx || 0) + 'px,' + (dy || 0) + 'px)';
+        };
+        if (pick) {
+          pick.addEventListener('touchstart', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            onPick();
+          }, { passive: false });
+          pick.addEventListener('click', function (e) { e.stopPropagation(); onPick(); });
+        }
+      },
+
       initQualityButtons: function () {
         const current = O.quality.name;
         const label = (O.quality.presets[current] || {}).label || current;
@@ -102,6 +127,7 @@
         const buttons = document.querySelectorAll('.q-buttons button[data-q]');
         buttons.forEach(function (btn) {
           if (btn.dataset.q === current) btn.classList.add('on');
+          btn.addEventListener('touchstart', function (e) { e.stopPropagation(); }, { passive: true });
           btn.addEventListener('click', function (e) {
             e.stopPropagation();
             O.quality.set(btn.dataset.q);

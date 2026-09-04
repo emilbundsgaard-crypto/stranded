@@ -2,7 +2,7 @@
 <html lang="da">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Oasen i kløften</title>
 <style>
   :root {
@@ -17,7 +17,7 @@
     font-family: "Avenir Next", "Segoe UI", Inter, system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
   }
-  canvas { display: block; width: 100%; height: 100%; }
+  canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 
   /* ---------- HUD ---------- */
   #hud { position: fixed; inset: 0; pointer-events: none; transition: opacity .35s ease; }
@@ -43,6 +43,27 @@
     border-radius: 4px; background: rgba(255,255,255,.16); font-size: 11.5px;
   }
 
+  /* Berøringsstyring — vises kun på skærme man rører ved */
+  #stick {
+    position: absolute; width: 132px; height: 132px; border-radius: 50%;
+    border: 1.5px solid rgba(255,255,255,.16); background: rgba(20,16,12,.22);
+    display: none; transform: translate(-50%, -50%); pointer-events: none;
+  }
+  #stickKnob {
+    position: absolute; left: 50%; top: 50%; width: 54px; height: 54px;
+    margin: -27px 0 0 -27px; border-radius: 50%;
+    background: rgba(244,179,80,.30); border: 1.5px solid rgba(244,179,80,.55);
+  }
+  #btnPick {
+    position: absolute; right: 30px; bottom: 118px; width: 84px; height: 84px;
+    border-radius: 50%; display: none; pointer-events: auto; cursor: pointer;
+    font: inherit; font-size: 19px; letter-spacing: .06em;
+    color: rgba(244,230,204,.95); background: rgba(244,179,80,.22);
+    border: 1.5px solid rgba(244,179,80,.6);
+  }
+  #btnPick:active { background: rgba(244,179,80,.45); }
+  body.touch #keys { display: none; }
+  body.touch #btnPick.on { display: block; }
   #pocket {
     position: absolute; left: 22px; bottom: 20px; min-width: 208px;
     padding: 13px 15px 11px; border-radius: 12px;
@@ -95,6 +116,14 @@
     line-height: 1.55; color: rgba(231,215,189,.82);
   }
   .diag-foot { margin-top: 10px; font-size: 11px; color: rgba(231,215,189,.4); }
+  #diagOpen {
+    position: absolute; left: 20px; top: 16px; width: 26px; height: 26px;
+    border-radius: 50%; cursor: pointer; pointer-events: auto;
+    font: inherit; font-size: 13px; line-height: 1;
+    color: rgba(231,215,189,.55); background: rgba(20,16,12,.45);
+    border: 1px solid rgba(255,255,255,.14);
+  }
+  #diagOpen:hover { color: #f4e6cc; background: rgba(20,16,12,.75); }
   #stats {
     position: absolute; right: 20px; top: 16px; text-align: right;
     font-size: 11px; letter-spacing: .06em; color: rgba(231,215,189,.42);
@@ -167,7 +196,28 @@
 
   @media (max-width: 620px) {
     #overlayTitle { font-size: 30px; }
-    #pocket { min-width: 168px; left: 12px; bottom: 12px; }
+    /* Berøringsstyring — vises kun på skærme man rører ved */
+  #stick {
+    position: absolute; width: 132px; height: 132px; border-radius: 50%;
+    border: 1.5px solid rgba(255,255,255,.16); background: rgba(20,16,12,.22);
+    display: none; transform: translate(-50%, -50%); pointer-events: none;
+  }
+  #stickKnob {
+    position: absolute; left: 50%; top: 50%; width: 54px; height: 54px;
+    margin: -27px 0 0 -27px; border-radius: 50%;
+    background: rgba(244,179,80,.30); border: 1.5px solid rgba(244,179,80,.55);
+  }
+  #btnPick {
+    position: absolute; right: 30px; bottom: 118px; width: 84px; height: 84px;
+    border-radius: 50%; display: none; pointer-events: auto; cursor: pointer;
+    font: inherit; font-size: 19px; letter-spacing: .06em;
+    color: rgba(244,230,204,.95); background: rgba(244,179,80,.22);
+    border: 1.5px solid rgba(244,179,80,.6);
+  }
+  #btnPick:active { background: rgba(244,179,80,.45); }
+  body.touch #keys { display: none; }
+  body.touch #btnPick.on { display: block; }
+  #pocket { min-width: 168px; left: 12px; bottom: 12px; }
     #keys { display: none; }
   }
 </style>
@@ -180,6 +230,8 @@
   <div id="crosshair"></div>
   <div id="prompt"></div>
   <div id="toast"></div>
+  <div id="stick"><div id="stickKnob"></div></div>
+  <button id="btnPick">E</button>
   <div id="pocket">
     <h3>Lomme <span id="invCount">0</span></h3>
     <ul id="invList"></ul>
@@ -195,6 +247,7 @@
     <pre id="diagBody"></pre>
     <div class="diag-foot">F2 åbner og lukker · <code>?safe=1</code> i adressen kører den enkleste udgave</div>
   </div>
+  <button id="diagOpen" title="Diagnostik (F2)">?</button>
   <div id="stats"><span id="fps">–</span> fps &nbsp;·&nbsp; <span id="qName">middel</span></div>
   <div id="keys">
     <div><b>WASD</b> gå &nbsp; <b>Shift</b> løb</div>

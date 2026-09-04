@@ -137,11 +137,52 @@
       let stepDistance = 0;
       let frames = 0, frameAcc = 0, reflectSkip = 0, quality = 1, degradeSteps = 0;
       let renderFailed = false;
+      let bypassedPost = false, bypassedWater = false;
+
+      function directRenderer() {
+        return {
+          render: function () { renderer.setRenderTarget(null); renderer.render(scene, camera); },
+          resize: function () {}, setQuality: function () {},
+          bloom: { strength: 0 }, ssao: { enabled: false }, godrays: { enabled: false }
+        };
+      }
+
+      // Læser nogle få pixels fra det færdige billede og svarer på, hvor
+      // meget de er forskellige. Nul betyder: alt har præcis samme farve.
+      const probe = new Uint8Array(4);
+      function imageSpread() {
+        try {
+          const gl = renderer.getContext();
+          const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
+          const pts = [[0.2, 0.25], [0.5, 0.25], [0.8, 0.25],
+                       [0.2, 0.5], [0.5, 0.5], [0.8, 0.5],
+                       [0.2, 0.78], [0.5, 0.78], [0.8, 0.78]];
+          let lo = [255, 255, 255], hi = [0, 0, 0];
+          for (const pt of pts) {
+            gl.readPixels(Math.floor(pt[0] * w), Math.floor(pt[1] * h), 1, 1,
+                          gl.RGBA, gl.UNSIGNED_BYTE, probe);
+            for (let c = 0; c < 3; c++) {
+              if (probe[c] < lo[c]) lo[c] = probe[c];
+              if (probe[c] > hi[c]) hi[c] = probe[c];
+            }
+          }
+          return Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]);
+        } catch (e) {
+          return -1;
+        }
+      }
       const hideInReflection = [player.hand, stones.highlight, props.detailGroup];
 
       // Startskærmen ligger oven på lærredet, så klikket fanges på
       // dokumentet — ellers ville man aldrig komme i gang.
-      document.addEventListener('mousedown', function () {
+      // Et tryk på en knap må ikke også starte spillet — ellers skifter man
+      // kvalitet og går ind i kløften i samme bevægelse.
+      function onButton(e) {
+        return !!(e.target && e.target.closest && e.target.closest('button'));
+      }
+
+      document.addEventListener('mousedown', function (e) {
+        if (onButton(e)) return;
         if (player.locked) return;
         const first = !player.started;
         player.requestLock();
@@ -155,6 +196,14 @@
 
       // Klik uden pointer lock (fx i en indlejret ramme) samler også op.
       player.onClick = tryPickup;
+      hud.initTouch(player, tryPickup);
+
+      // På en telefon starter spillet ved den første berøring.
+      document.addEventListener('touchstart', function (e) {
+        if (onButton(e)) return;
+        if (!player.started) { player.started = true; audio.start(); }
+        hud.hideOverlay();
+      }, { passive: true });
 
       player.onLockChange = function (locked, was) {
         if (locked) hud.hideOverlay();
@@ -246,14 +295,32 @@
             renderFailed = true;
             O.diagnostics.fail('efterbehandling fejlede: ' + err.message +
                                ' — skifter til simpel visning');
-            post = {
-              render: function () { renderer.setRenderTarget(null); renderer.render(scene, camera); },
-              resize: function () {}, setQuality: function () {},
-              bloom: { strength: 0 }, ssao: { enabled: false }, godrays: { enabled: false }
-            };
+            post = directRenderer();
           }
         }
         O.debug.frames++;
+
+        // Vagthund: et billede kan sagtens blive tegnet uden en eneste fejl
+        // og alligevel være ensfarvet — det sker, når en driver behandler
+        // noget i pipelinen anderledes end min. Er billedet fladt, går vi
+        // uden om efterbehandlingen i stedet for at lade brugeren stirre på
+        // en grå skærm.
+        if (O.debug.frames === 5 || O.debug.frames === 40) {
+          const spread = imageSpread();
+          O.diagnostics.note('billedvariation ved billede ' + O.debug.frames + ': ' + spread);
+          if (spread >= 0 && spread < 4) {
+            if (!bypassedPost) {
+              bypassedPost = true;
+              O.diagnostics.fail('billedet var ensfarvet — springer efterbehandlingen over');
+              post = directRenderer();
+            } else if (!bypassedWater) {
+              bypassedWater = true;
+              O.diagnostics.fail('stadig ensfarvet — slukker også vandets ekstra pas');
+              water.update = function () {};
+              O.diagnostics.show(true);
+            }
+          }
+        }
 
         // Automatisk nedtrapning. Den skal reagere hurtigt — det hjælper
         // ingen at opdage efter ti sekunder, at maskinen ikke kan følge med.

@@ -119,6 +119,21 @@
         if (e.code === 'F2') { e.preventDefault(); O.diagnostics.toggle(); }
       });
 
+      // Knappen skal kunne nås, også efter startskærmen er væk — ellers kan
+      // man ikke fortælle mig noget, når billedet er gået i stykker.
+      const opener = document.getElementById('diagOpen');
+      if (opener) {
+        opener.addEventListener('click', function (e) {
+          e.stopPropagation();
+          O.diagnostics.toggle();
+        });
+        opener.addEventListener('touchstart', function (e) {
+          e.stopPropagation();
+          e.preventDefault();
+          O.diagnostics.toggle();
+        }, { passive: false });
+      }
+
       window.addEventListener('error', function (e) {
         add('fejl', (e.message || 'ukendt fejl') +
             (e.filename ? ' @ ' + e.filename.split('/').pop() + ':' + e.lineno : ''));
