@@ -13,8 +13,25 @@ lagdelte kløftvægge.
 
 ## Prøv den
 
-**Nemmest:** åbn `dist/oasen.html` — én selvstændig fil, dobbeltklik den, og
-den kører (også uden internet).
+**Som program på din Mac** (kraftigst — hele grafikkortet, ingen browserfane):
+
+```bash
+cd desktop
+npm install          # første gang
+npm start            # bygger scenen og åbner Oasen som program
+```
+
+Programmet henter ANGLE's Metal-backend, beder om det kraftigste grafikkort på
+maskinen og starter på niveauet **Kino**, som er for tungt til en browser.
+Menuen **Grafik** skifter niveau, og `npm run start:uncapped` slipper
+billedraten fri af skærmens opdateringsfrekvens (maskinen bliver varmere).
+
+En rigtig `.app`-fil laves med `npm run dist` (kræver at du kører på macOS);
+resultatet lander i `desktop/build/`.
+
+**I browseren:** åbn `dist/oasen.html` — én selvstændig fil, dobbeltklik den, og
+den kører (også uden internet). Her starter den på **Middel**; niveauet vælges
+på startskærmen, og valget huskes.
 
 **Fra kildekoden:** kør en lille webserver i mappen, fordi browsere ikke må
 læse sidemoduler fra `file://` på tværs af filer:
@@ -29,6 +46,24 @@ Byg enkeltfilen igen efter ændringer:
 ```bash
 node tools/build.js
 ```
+
+## Grafikniveauer
+
+Pixeltætheden er den dyreste enkeltknap — den koster kvadratisk på hver eneste
+buffer. Derfor har hvert niveau både et loft over pixeltætheden og et samlet
+loft over antal pixels, uanset hvor stor skærmen er.
+
+| Niveau | Skygger | Vandspejling | AO | Parallax | Planteklynger |
+| --- | --- | --- | --- | --- | --- |
+| Lav | 2 × 1024 | 35 % | – | – | 550 |
+| Middel | 2 × 1024 | 50 % | – | – | 900 |
+| Høj | 3 × 1536, blød | 70 % | ✓ | ✓ | 1200 |
+| Ultra | 3 × 2048, blød | 100 % | ✓ | ✓ | 1500 |
+| Kino (kun program) | 4 × 3072, blød | 100 % | ✓ | ✓ | 2400 |
+
+Falder billedraten under 30 pr. sekund, trapper spillet selv ned i tre trin —
+først ambient occlusion og solstråler, så vandets opløsning, til sidst
+billedopløsningen — og skriver det på startskærmen i stedet for bare at hakke.
 
 ## Styring
 

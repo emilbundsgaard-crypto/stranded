@@ -248,7 +248,8 @@
       const dist = Math.hypot(x, z * 0.7);
       const near = dist < 95;
       const mid = dist < 150;
-      const cols = near ? 56 : mid ? 34 : 20;
+      const maxCols = O.quality.get('cliffCols');
+      const cols = near ? maxCols : mid ? Math.round(maxCols * 0.6) : Math.round(maxCols * 0.36);
       const rowStep = near ? 1.0 : mid ? 2.0 : 3.4;
 
       const g = mesaGeometry(rnd, {
@@ -329,7 +330,7 @@
       metalness: 0.0,
       envMapIntensity: 0.9
     });
-    O.shaderlib.parallax(mat, tex.rockNormal, 0.022, 30.0);
+    if (O.quality.get('pom')) O.shaderlib.parallax(mat, tex.rockNormal, 0.022, 30.0);
     O.shaderlib.detailNormal(mat, tex.detailNormal, 9.0, 0.45);
     const mesh = new THREE.Mesh(geo, mat);
     mesh.castShadow = true;

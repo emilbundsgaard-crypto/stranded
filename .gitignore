@@ -1,3 +1,5 @@
 node_modules/
 *.tgz
 .DS_Store
+desktop/node_modules/
+desktop/build/

@@ -1,0 +1,31 @@
+{
+  "name": "oasen-desktop",
+  "productName": "Oasen",
+  "version": "1.0.0",
+  "description": "Oasen som program til macOS — samme scene, hele grafikkortet.",
+  "main": "main.js",
+  "scripts": {
+    "start": "node ../tools/build.js && electron .",
+    "start:uncapped": "node ../tools/build.js && electron . --uncapped",
+    "dist": "node ../tools/build.js && electron-builder --mac",
+    "dist:universal": "node ../tools/build.js && electron-builder --mac --universal"
+  },
+  "devDependencies": {
+    "electron": "^32.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "dk.oasen.app",
+    "productName": "Oasen",
+    "directories": { "output": "build" },
+    "files": ["main.js", "package.json"],
+    "extraResources": [
+      { "from": "../dist/oasen.html", "to": "dist/oasen.html" }
+    ],
+    "mac": {
+      "category": "public.app-category.games",
+      "target": [{ "target": "dmg", "arch": ["arm64", "x64"] }],
+      "darkModeSupport": true
+    }
+  }
+}

@@ -194,6 +194,7 @@
   }
 
   O.buildPost = function (renderer, scene, camera) {
+    const Q = O.quality.settings;
     const quad = new THREE.FullScreenQuad(null);
     const size = new THREE.Vector2();
     renderer.getSize(size);
@@ -202,10 +203,11 @@
     let H = Math.max(2, Math.floor(size.y * pr));
 
     const hdr = renderer.capabilities.isWebGL2;
+    const hdrType = hdr ? THREE.HalfFloatType : THREE.UnsignedByteType;
 
-    // Scenebufferen: HDR farve + dybde. Dybden er gratis her — den bliver
-    // alligevel skrevet, mens scenen tegnes.
-    const depthTexture = new THREE.DepthTexture(W, H);
+    // Scenebufferen: HDR farve + dybde. Dybden er gratis her — den skrives
+    // alligevel, mens scenen tegnes, og bruges bagefter til AO og solstråler.
+    let depthTexture = new THREE.DepthTexture(W, H);
     depthTexture.type = THREE.UnsignedIntType;
     depthTexture.minFilter = THREE.NearestFilter;
     depthTexture.magFilter = THREE.NearestFilter;
@@ -213,8 +215,7 @@
     const sceneRT = new THREE.WebGLRenderTarget(W, H, {
       minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
       format: THREE.RGBAFormat, encoding: THREE.LinearEncoding,
-      type: hdr ? THREE.HalfFloatType : THREE.UnsignedByteType,
-      depthTexture: depthTexture, depthBuffer: true
+      type: hdrType, depthTexture: depthTexture, depthBuffer: true
     });
 
     function makeRT(scale, type) {
@@ -226,11 +227,15 @@
       );
     }
 
-    const AO_SCALE = 0.5;
-    const aoRT = makeRT(AO_SCALE);
-    const aoTmpRT = makeRT(AO_SCALE);
-    const hdrRT = makeRT(1.0, hdr ? THREE.HalfFloatType : THREE.UnsignedByteType);
-    const ldrRT = makeRT(1.0);
+    // Farvebufferen der arbejdes videre i. Den har ingen dybde tilknyttet —
+    // ellers ville vi både skrive til og læse fra samme dybdetekstur.
+    const hdrRT = makeRT(1.0, hdrType);
+
+    const aoScale = Q.ssao || 0;
+    const aoRT = aoScale ? makeRT(aoScale) : null;
+    const aoTmpRT = aoScale ? makeRT(aoScale) : null;
+    const godrayRT = Q.godrays ? makeRT(0.4, hdrType) : null;
+    const ldrRT = Q.smaa ? makeRT(1.0) : null;
 
     // Prøvepunkter i en halvkugle, tættest på centrum.
     const kernel = [];
@@ -238,15 +243,14 @@
       const v = new THREE.Vector3(
         Math.random() * 2 - 1, Math.random() * 2 - 1, Math.random()
       ).normalize();
-      const s = 0.25 + 0.75 * Math.pow(i / 16, 2);
-      kernel.push(v.multiplyScalar(s));
+      kernel.push(v.multiplyScalar(0.25 + 0.75 * Math.pow(i / 16, 2)));
     }
 
     const ssaoMat = quadMaterial(SSAO_FRAG, {
       tDepth: { value: depthTexture },
       uProjInv: { value: new THREE.Matrix4() },
       uProj: { value: new THREE.Matrix4() },
-      uResolution: { value: new THREE.Vector2(W * AO_SCALE, H * AO_SCALE) },
+      uResolution: { value: new THREE.Vector2(W * (aoScale || 0.5), H * (aoScale || 0.5)) },
       uRadius: { value: 0.85 },
       uIntensity: { value: 1.35 },
       uBias: { value: 0.022 },
@@ -257,14 +261,34 @@
       tAO: { value: null },
       tDepth: { value: depthTexture },
       uDirection: { value: new THREE.Vector2(1, 0) },
-      uTexel: { value: new THREE.Vector2(1 / (W * AO_SCALE), 1 / (H * AO_SCALE)) }
+      uTexel: { value: new THREE.Vector2(1 / Math.max(1, W * (aoScale || 0.5)),
+                                         1 / Math.max(1, H * (aoScale || 0.5))) }
     });
 
     const compositeMat = quadMaterial(COMPOSITE_FRAG, {
       tScene: { value: sceneRT.texture },
-      tAO: { value: aoRT.texture },
+      tAO: { value: aoRT ? aoRT.texture : null },
       uStrength: { value: 1.0 }
     });
+
+    const godrayMat = quadMaterial(GODRAY_FRAG, {
+      tScene: { value: sceneRT.texture },
+      tDepth: { value: depthTexture },
+      uSunUv: { value: new THREE.Vector2(0.5, 0.5) },
+      uDensity: { value: 0.75 },
+      uDecay: { value: 0.94 },
+      uWeight: { value: 0.075 }
+    });
+
+    // Solstrålerne lægges additivt oven i farvebufferen — det sparer en hel
+    // ekstra fuldopløsnings-buffer.
+    const addMat = quadMaterial(`
+      uniform sampler2D tAdd;
+      varying vec2 vUv;
+      void main() { gl_FragColor = vec4( texture2D( tAdd, vUv ).rgb, 1.0 ); }
+    `, { tAdd: { value: godrayRT ? godrayRT.texture : null } });
+    addMat.blending = THREE.AdditiveBlending;
+    addMat.transparent = true;
 
     const gradeMat = quadMaterial(GRADE_FRAG, {
       tDiffuse: { value: hdrRT.texture },
@@ -279,38 +303,20 @@
       uTime: { value: 0 }
     });
 
-    const godrayMat = quadMaterial(GODRAY_FRAG, {
-      tScene: { value: sceneRT.texture },
-      tDepth: { value: depthTexture },
-      uSunUv: { value: new THREE.Vector2(0.5, 0.5) },
-      uDensity: { value: 0.75 },
-      uDecay: { value: 0.94 },
-      uWeight: { value: 0.075 }
-    });
-    const godrayRT = makeRT(0.5, hdr ? THREE.HalfFloatType : THREE.UnsignedByteType);
-    const addMat = quadMaterial(`
-      uniform sampler2D tBase;
-      uniform sampler2D tAdd;
-      varying vec2 vUv;
-      void main() {
-        gl_FragColor = vec4( texture2D( tBase, vUv ).rgb + texture2D( tAdd, vUv ).rgb, 1.0 );
-      }
-    `, { tBase: { value: null }, tAdd: { value: godrayRT.texture } });
-    const addRT = makeRT(1.0, hdr ? THREE.HalfFloatType : THREE.UnsignedByteType);
+    const bloom = Q.bloom
+      ? new THREE.UnrealBloomPass(new THREE.Vector2(W, H), 0.22, 0.7, 0.93) : null;
+    const smaa = Q.smaa ? new THREE.SMAAPass(W, H) : null;
+    if (smaa) smaa.renderToScreen = true;
+
     const sunWorld = new THREE.Vector3();
     const sunProj = new THREE.Vector3();
-    let godraysEnabled = true;
-
-    const bloom = new THREE.UnrealBloomPass(new THREE.Vector2(W, H), 0.22, 0.7, 0.93);
-    const smaa = new THREE.SMAAPass(W, H);
-    smaa.renderToScreen = true;
-
-    let ssaoEnabled = true;
+    let ssaoEnabled = aoScale > 0;
+    let godraysEnabled = !!godrayRT;
 
     function draw(material, target) {
       quad.material = material;
       renderer.setRenderTarget(target);
-      renderer.clear();
+      if (material !== addMat) renderer.clear();
       quad.render(renderer);
     }
 
@@ -321,7 +327,7 @@
       renderer.render(scene, camera);
 
       // 2) Ambient occlusion ud fra dybden, sløret dybde-bevidst.
-      if (ssaoEnabled) {
+      if (ssaoEnabled && aoRT) {
         ssaoMat.uniforms.uProj.value.copy(camera.projectionMatrix);
         ssaoMat.uniforms.uProjInv.value.copy(camera.projectionMatrixInverse);
         draw(ssaoMat, aoRT);
@@ -333,37 +339,33 @@
         draw(blurMat, aoRT);
       }
 
-      // 3) Sammensætning: scene ganget med AO.
-      compositeMat.uniforms.uStrength.value = ssaoEnabled ? 1.0 : 0.0;
+      // 3) Over i farvebufferen (med AO ganget på, hvis den er tændt).
+      compositeMat.uniforms.uStrength.value = (ssaoEnabled && aoRT) ? 1.0 : 0.0;
       draw(compositeMat, hdrRT);
 
-      // 3b) Solstråler — kun når solen faktisk er i billedet.
-      let raysTarget = hdrRT;
-      if (godraysEnabled && O.debug && O.debug.sky) {
+      // 4) Solstråler — kun når solen faktisk er i billedet.
+      if (godraysEnabled && godrayRT && O.debug && O.debug.sky) {
         sunWorld.copy(O.debug.sky.sun).multiplyScalar(800).add(camera.position);
         sunProj.copy(sunWorld).project(camera);
-        // Kun når solen faktisk er i billedet — ellers ville strålerne pege
-        // mod et punkt uden for skærmen og lægge sig som slør over alting.
-        const onScreen = sunProj.z < 1 &&
-          sunProj.x > -1.0 && sunProj.x < 1.0 && sunProj.y > -1.0 && sunProj.y < 1.0;
-        if (onScreen) {
+        if (sunProj.z < 1 && Math.abs(sunProj.x) < 1 && Math.abs(sunProj.y) < 1) {
           godrayMat.uniforms.uSunUv.value.set(sunProj.x * 0.5 + 0.5, sunProj.y * 0.5 + 0.5);
           draw(godrayMat, godrayRT);
-          addMat.uniforms.tBase.value = hdrRT.texture;
-          draw(addMat, addRT);
-          raysTarget = addRT;
+          draw(addMat, hdrRT);          // additivt oven i
         }
       }
 
-      // 4) Bloom lægges oveni (passet skriver tilbage i samme buffer).
-      bloom.render(renderer, null, raysTarget, dt, false);
+      // 5) Bloom lægges oveni (passet skriver tilbage i samme buffer).
+      if (bloom && bloom.strength > 0) bloom.render(renderer, null, hdrRT, dt, false);
 
-      // 5) Farvegradering til LDR, derefter SMAA ud på skærmen.
-      gradeMat.uniforms.tDiffuse.value = raysTarget.texture;
+      // 6) Farvegradering, derefter SMAA — eller direkte på skærmen.
       gradeMat.uniforms.uTime.value = t;
-      draw(gradeMat, ldrRT);
-      renderer.setRenderTarget(null);
-      smaa.render(renderer, null, ldrRT, dt, false);
+      if (smaa && ldrRT) {
+        draw(gradeMat, ldrRT);
+        renderer.setRenderTarget(null);
+        smaa.render(renderer, null, ldrRT, dt, false);
+      } else {
+        draw(gradeMat, null);
+      }
     }
 
     function resize() {
@@ -371,35 +373,48 @@
       pr = renderer.getPixelRatio();
       W = Math.max(2, Math.floor(size.x * pr));
       H = Math.max(2, Math.floor(size.y * pr));
+
+      // Dybdeteksturen kan ikke bare skifte størrelse — den skal bygges om,
+      // ellers passer den ikke til bufferen og alting bliver sort.
+      depthTexture.dispose();
+      depthTexture = new THREE.DepthTexture(W, H);
+      depthTexture.type = THREE.UnsignedIntType;
+      depthTexture.minFilter = THREE.NearestFilter;
+      depthTexture.magFilter = THREE.NearestFilter;
+      sceneRT.depthTexture = depthTexture;
       sceneRT.setSize(W, H);
-      depthTexture.image.width = W;
-      depthTexture.image.height = H;
-      depthTexture.needsUpdate = true;
-      aoRT.setSize(W * AO_SCALE, H * AO_SCALE);
-      aoTmpRT.setSize(W * AO_SCALE, H * AO_SCALE);
+      ssaoMat.uniforms.tDepth.value = depthTexture;
+      blurMat.uniforms.tDepth.value = depthTexture;
+      godrayMat.uniforms.tDepth.value = depthTexture;
+
       hdrRT.setSize(W, H);
-      addRT.setSize(W, H);
-      godrayRT.setSize(W * 0.5, H * 0.5);
-      ldrRT.setSize(W, H);
-      ssaoMat.uniforms.uResolution.value.set(W * AO_SCALE, H * AO_SCALE);
-      blurMat.uniforms.uTexel.value.set(1 / (W * AO_SCALE), 1 / (H * AO_SCALE));
-      bloom.setSize(W, H);
-      smaa.setSize(W, H);
+      if (ldrRT) ldrRT.setSize(W, H);
+      if (godrayRT) godrayRT.setSize(W * 0.4, H * 0.4);
+      if (aoRT) {
+        aoRT.setSize(W * aoScale, H * aoScale);
+        aoTmpRT.setSize(W * aoScale, H * aoScale);
+        ssaoMat.uniforms.uResolution.value.set(W * aoScale, H * aoScale);
+        blurMat.uniforms.uTexel.value.set(1 / (W * aoScale), 1 / (H * aoScale));
+      }
+      if (bloom) bloom.setSize(W, H);
+      if (smaa) smaa.setSize(W, H);
     }
 
     return {
       render: render,
       resize: resize,
-      bloom: bloom,
-      grade: { material: gradeMat, get enabled() { return true; } },
-      ssao: { material: ssaoMat, composite: compositeMat,
-              set enabled(v) { ssaoEnabled = v; }, get enabled() { return ssaoEnabled; } },
-      godrays: { set enabled(v) { godraysEnabled = v; }, get enabled() { return godraysEnabled; },
-                 material: godrayMat },
+      bloom: bloom || { strength: 0 },
+      grade: { material: gradeMat },
+      ssao: { material: ssaoMat,
+              set enabled(v) { ssaoEnabled = v && !!aoRT; },
+              get enabled() { return ssaoEnabled; } },
+      godrays: { material: godrayMat,
+                 set enabled(v) { godraysEnabled = v && !!godrayRT; },
+                 get enabled() { return godraysEnabled; } },
       setQuality: function (high) {
-        ssaoEnabled = high;
-        godraysEnabled = high;
-        bloom.strength = high ? 0.22 : 0.14;
+        ssaoEnabled = high && !!aoRT;
+        godraysEnabled = high && !!godrayRT;
+        if (bloom) bloom.strength = high ? 0.22 : 0.12;
       }
     };
   };

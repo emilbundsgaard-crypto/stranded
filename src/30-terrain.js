@@ -54,7 +54,7 @@
 
   O.buildTerrain = function (scene, tex, timeUniform) {
     const size = O.config.worldSize;
-    const seg = 260;
+    const seg = O.quality.get('terrainSeg');
     const geo = new THREE.PlaneGeometry(size, size, seg, seg);
     geo.rotateX(-Math.PI / 2);
 
@@ -86,7 +86,7 @@
       metalness: 0.0,
       envMapIntensity: 0.7
     });
-    O.shaderlib.parallax(mat, tex.sandNormal, 0.010, 16.0);
+    if (O.quality.get('pom')) O.shaderlib.parallax(mat, tex.sandNormal, 0.010, 16.0);
     O.shaderlib.detailNormal(mat, tex.detailNormal, 6.0, 0.30);
     O.shaderlib.macroVariation(mat, tex.macro, 0.030, 0.35);
     O.shaderlib.wetness(mat, 0.45);

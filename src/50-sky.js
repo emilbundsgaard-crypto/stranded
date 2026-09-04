@@ -149,12 +149,13 @@
     // Ét skyggekort skal dække både grusset ved fødderne og klippen 150 m
     // væk; det kan ikke lade sig gøre skarpt. Kaskader deler synsfeltet op,
     // så det nære får sin egen høje opløsning.
+    const Q = O.quality.settings;
     const csm = new THREE.CSM({
-      maxFar: 240,
-      cascades: 3,
+      maxFar: Q.shadowCascades >= 3 ? 240 : 150,
+      cascades: Q.shadowCascades,
       mode: 'practical',
       parent: scene,
-      shadowMapSize: 2048,
+      shadowMapSize: Q.shadowSize,
       lightDirection: sun.clone().negate(),
       lightIntensity: 2.70,
       lightMargin: 220,
@@ -166,11 +167,13 @@
     csm.lights.forEach(function (l, i) {
       l.color.copy(O.srgb(0xfff2dc));
       l.shadow.normalBias = normalBias[i] || 0.3;
-      l.shadow.mapSize.set(2048, 2048);
+      l.shadow.mapSize.set(Q.shadowSize, Q.shadowSize);
       // VSM sløres i skyggekortet selv — en kant uden halvskygge er dét,
       // der får skygger til at se klippet ud.
-      l.shadow.radius = [2.5, 4.0, 6.0][i] || 4.0;
-      l.shadow.bias = 0.0;
+      // VSM sløres i skyggekortet selv; uden det bliver kanten klippet.
+      // På lave niveauer bruges almindelig PCF, som er billigere.
+      l.shadow.radius = Q.shadowSoft ? ([2.5, 4.0, 6.0][i] || 4.0) : 1.0;
+      l.shadow.bias = Q.shadowSoft ? 0.0 : -0.0004;
     });
 
     // Skyggefyld. En skygge i ørkenen er ikke sort — den er belyst af den

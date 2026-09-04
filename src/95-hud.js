@@ -19,6 +19,9 @@
     const overlayHint = $('overlayHint');
 
     const inventory = {};
+    const fpsEl = $('fps');
+    const qNameEl = $('qName');
+    const qNoteEl = $('qNote');
     let toastTimer = null;
     let visible = true;
 
@@ -76,6 +79,34 @@
       },
       setSound: function (on) {
         $('sndState').textContent = on ? 'til' : 'fra';
+      },
+
+      setFps: function (fps) {
+        if (fpsEl) fpsEl.textContent = fps;
+      },
+
+      // Sig det ærligt, hvis spillet selv har skruet ned.
+      setQualityNote: function (name, automatic) {
+        const label = (O.quality.presets[name] || {}).label || name;
+        if (qNameEl) qNameEl.textContent = label.toLowerCase();
+        if (automatic && qNoteEl) {
+          qNoteEl.textContent = 'Skruet ned til ' + label.toLowerCase() +
+            ' — maskinen kunne ikke følge med.';
+        }
+      },
+
+      initQualityButtons: function () {
+        const current = O.quality.name;
+        const label = (O.quality.presets[current] || {}).label || current;
+        if (qNameEl) qNameEl.textContent = label.toLowerCase();
+        const buttons = document.querySelectorAll('.q-buttons button');
+        buttons.forEach(function (btn) {
+          if (btn.dataset.q === current) btn.classList.add('on');
+          btn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            O.quality.set(btn.dataset.q);
+          });
+        });
       }
     };
 

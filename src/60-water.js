@@ -198,8 +198,9 @@
       rt.userData = { scale: scale };
       return rt;
     }
-    const reflectRT = makeTarget(1.0);    // fuld opløsning: en uskarp spejling ligner tåge
-    const refractRT = makeTarget(0.75);
+    const Q = O.quality.settings;
+    const reflectRT = makeTarget(Q.reflect);   // uskarp spejling ligner tåge
+    const refractRT = makeTarget(Q.refract);
 
     const uniforms = THREE.UniformsUtils.merge([
       THREE.UniformsLib.fog,

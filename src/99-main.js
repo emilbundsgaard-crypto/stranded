@@ -6,21 +6,52 @@
 
   function boot() {
     const hud = O.buildHud();
+    hud.initQualityButtons();
     const canvas = document.getElementById('scene');
 
-    const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, powerPreference: 'high-performance' });
-    let pixelRatio = Math.min(window.devicePixelRatio, 2);
+    const Q = O.quality.settings;
+
+    // Pixeltætheden er den dyreste enkeltknap: den koster kvadratisk på
+    // ALLE buffere. Derfor både et loft pr. niveau og et samlet loft over
+    // antal pixels — det er dét, der forhindrer, at hukommelsen løber tør
+    // på en skærm med høj opløsning.
+    const MAX_PIXELS = { kino: 7.0e6, ultra: 4.5e6, high: 3.0e6, medium: 2.2e6, low: 1.5e6 };
+    function choosePixelRatio() {
+      const budget = MAX_PIXELS[O.quality.runtimeName] || 2.2e6;
+      const area = Math.max(1, window.innerWidth * window.innerHeight);
+      return Math.min(window.devicePixelRatio, Q.pixelRatio, Math.sqrt(budget / area));
+    }
+
+    const renderer = new THREE.WebGLRenderer({
+      canvas: canvas, antialias: false, powerPreference: 'high-performance',
+      stencil: false
+    });
+    let pixelRatio = choosePixelRatio();
     renderer.setPixelRatio(pixelRatio);
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.outputEncoding = THREE.sRGBEncoding;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 0.78;
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.VSMShadowMap;   // ægte blød skyggekant
+    renderer.shadowMap.type = Q.shadowSoft ? THREE.VSMShadowMap : THREE.PCFSoftShadowMap;
     renderer.shadowMap.autoUpdate = false;   // styres manuelt i render-løkken
 
+    // Mister vi WebGL-konteksten (typisk fordi grafikhukommelsen løb tør),
+    // skal spilleren få besked i stedet for en grå skærm.
+    canvas.addEventListener('webglcontextlost', function (e) {
+      e.preventDefault();
+      const box = document.getElementById('lostBox');
+      if (box) {
+        box.style.display = 'block';
+        document.getElementById('overlay').classList.remove('hidden');
+        document.getElementById('startBox').style.display = 'none';
+        document.getElementById('loading').style.display = 'none';
+      }
+    }, false);
+
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(66, window.innerWidth / window.innerHeight, 0.08, 1400);
+    const camera = new THREE.PerspectiveCamera(66, window.innerWidth / window.innerHeight,
+                                               0.08, Q.drawDistance + 500);
     scene.add(camera);
 
     const timeUniform = { value: 0 };
@@ -55,6 +86,11 @@
         });
       }],
       ['Blander farverne…', function () { post = O.buildPost(renderer, scene, camera); }],
+      ['Varmer shaderne op…', function () {
+        // Uden det her oversættes shaderne først, når man drejer og et nyt
+        // materiale kommer i billedet — det giver hak de første sekunder.
+        renderer.compile(scene, camera);
+      }],
       ['Snører støvlerne…', function () {
         player = O.buildPlayer(camera, canvas);
         audio = O.buildAudio();
@@ -83,7 +119,7 @@
       const clock = new THREE.Clock();
       let t = 0;
       let stepDistance = 0;
-      let frames = 0, frameAcc = 0, reflectSkip = 0, quality = 1;
+      let frames = 0, frameAcc = 0, reflectSkip = 0, quality = 1, degradeSteps = 0;
       const hideInReflection = [player.hand, stones.highlight, props.detailGroup];
 
       // Startskærmen ligger oven på lærredet, så klikket fanges på
@@ -131,6 +167,8 @@
         camera.aspect = window.innerWidth / window.innerHeight;
         camera.updateProjectionMatrix();
         sky.csm.updateFrustums();
+        pixelRatio = choosePixelRatio();
+        renderer.setPixelRatio(pixelRatio);
         renderer.setSize(window.innerWidth, window.innerHeight);
         post.resize();
         water.resize();
@@ -185,19 +223,24 @@
         post.render(dt, t);
         O.debug.frames++;
 
-        // Enkel automatisk kvalitetsjustering.
+        // Automatisk nedtrapning. Den skal reagere hurtigt — det hjælper
+        // ingen at opdage efter ti sekunder, at maskinen ikke kan følge med.
         frameAcc += dt; frames++;
-        if (frames >= 90) {
+        if (frames >= 30) {
           const avg = frameAcc / frames;
-          if (avg > 0.026 && quality === 1) {
-            quality = 0;
-            pixelRatio = Math.min(pixelRatio, 1.25);
-            renderer.setPixelRatio(pixelRatio);
-            post.resize();
+          O.debug.fps = Math.round(1 / avg);
+          hud.setFps(O.debug.fps);
+          if (avg > 0.033 && degradeSteps < 3) {
+            degradeSteps++;
+            O.quality.stepDown();
             post.setQuality(false);
             water.setQuality(false);
-          } else if (avg < 0.016 && quality === 0) {
-            quality = 1;
+            pixelRatio = Math.min(pixelRatio, choosePixelRatio(), degradeSteps > 1 ? 1.0 : 1.25);
+            renderer.setPixelRatio(pixelRatio);
+            post.resize();
+            water.resize();
+            hud.setQualityNote(O.quality.runtimeName, true);
+          } else if (avg < 0.014 && degradeSteps === 0) {
             post.setQuality(true);
             water.setQuality(true);
           }

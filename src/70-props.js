@@ -150,7 +150,8 @@
     // Hvilken art der gror hvor følger fugtigheden: friskt græs nede ved
     // vandet, strå og buske længere oppe på den tørre bred.
     let clusters = 0, tries = 0;
-    while (clusters < 1500 && tries < 90000) {
+    const PLANT_CLUSTERS = O.quality.get('plants');
+    while (clusters < PLANT_CLUSTERS && tries < PLANT_CLUSTERS * 60) {
       tries++;
       const cx = (rnd() - 0.5) * 250;
       const cz = (rnd() - 0.5) * 290;
@@ -199,7 +200,7 @@
     const gc = new THREE.Color();
     for (const kind of plantKinds) {
       if (!kind.list.length) continue;
-      const im = instanced(tuftGeo, kind.mat, kind.list, true, true);
+      const im = instanced(tuftGeo, kind.mat, kind.list, O.quality.get('grassShadows'), true);
       for (let i = 0; i < kind.list.length; i++) {
         const g = kind.tint[i];
         gc.setRGB(
@@ -264,7 +265,8 @@
 
     // 3) Grus: mange små sten i sandet langs bredden. De ses knap enkeltvis,
     //    men de fjerner fornemmelsen af en tom, glat flade.
-    for (let i = 0, t = 0; i < 1500 && t < 40000; t++) {
+    const GRAVEL = O.quality.get('gravel');
+    for (let i = 0, t = 0; i < GRAVEL && t < GRAVEL * 26; t++) {
       const x = (rnd() - 0.5) * 170, z = (rnd() - 0.5) * 210;
       const h = O.world.height(x, z);
       if (h < -0.7 || h > 2.2) continue;
