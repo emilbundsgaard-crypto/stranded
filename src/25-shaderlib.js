@@ -67,6 +67,94 @@
       return mat;
     },
 
+    // Parallax occlusion mapping: overfladen får ægte dybde. Blikket
+    // marcherer ned i højdekortet (gemt i normalkortets alfakanal), så
+    // sandribber og stenlag skygger for hinanden i stedet for at være en
+    // flad tegning. Effekten tones ud med afstanden, hvor den ikke ses.
+    parallax: function (mat, heightTexture, scale, fadeFar) {
+      const uniforms = {
+        uPomMap: { value: heightTexture },
+        uPomScale: { value: scale },
+        uPomFade: { value: fadeFar || 24.0 }
+      };
+      mat.userData.pom = uniforms;
+      chain(mat, function (shader) {
+        shader.uniforms.uPomMap = uniforms.uPomMap;
+        shader.uniforms.uPomScale = uniforms.uPomScale;
+        shader.uniforms.uPomFade = uniforms.uPomFade;
+        shader.fragmentShader =
+          'uniform sampler2D uPomMap;\nuniform float uPomScale;\nuniform float uPomFade;\n' +
+          shader.fragmentShader.replace(
+            '#include <map_fragment>',
+            `vec2 vUvPom = vUv;
+             {
+               vec3 eye = - vViewPosition;
+               vec3 q0 = vec3( dFdx( eye.x ), dFdx( eye.y ), dFdx( eye.z ) );
+               vec3 q1 = vec3( dFdy( eye.x ), dFdy( eye.y ), dFdy( eye.z ) );
+               vec2 st0 = dFdx( vUv );
+               vec2 st1 = dFdy( vUv );
+               vec3 Np = normalize( vNormal );
+               vec3 T = normalize( q0 * st1.t - q1 * st0.t );
+               vec3 B = normalize( cross( Np, T ) );
+               vec3 V = normalize( vViewPosition );
+               vec3 vt = normalize( vec3( dot( V, T ), dot( V, B ), dot( V, Np ) ) );
+               float fade = 1.0 - smoothstep( uPomFade * 0.35, uPomFade, length( vViewPosition ) );
+               if ( fade > 0.02 ) {
+                 const float layers = 10.0;
+                 vec2 delta = ( vt.xy / max( abs( vt.z ), 0.35 ) ) * uPomScale * fade / layers;
+                 float layerDepth = 1.0 / layers;
+                 float curDepth = 0.0;
+                 vec2 uvp = vUv;
+                 float h = 1.0 - texture2D( uPomMap, uvp ).a;
+                 for ( int i = 0; i < 10; i ++ ) {
+                   if ( curDepth >= h ) break;
+                   uvp -= delta;
+                   h = 1.0 - texture2D( uPomMap, uvp ).a;
+                   curDepth += layerDepth;
+                 }
+                 vUvPom = uvp;
+               }
+             }
+             #define vUv vUvPom
+             #include <map_fragment>`
+          );
+      }, 'pom');
+      mat.extensions = mat.extensions || {};
+      mat.extensions.derivatives = true;
+      return mat;
+    },
+
+    // Kaustik: sollys brudt gennem bølgerne, som det tegner sig på bunden.
+    caustics: function (mat, timeUniform, waterLevel) {
+      const uniforms = {
+        uCausticTime: timeUniform,
+        uWaterLevel: { value: waterLevel }
+      };
+      chain(mat, function (shader) {
+        shader.uniforms.uCausticTime = uniforms.uCausticTime;
+        shader.uniforms.uWaterLevel = uniforms.uWaterLevel;
+        shader.fragmentShader =
+          'uniform float uCausticTime;\nuniform float uWaterLevel;\n' +
+          shader.fragmentShader.replace(
+            '#include <emissivemap_fragment>',
+            `#include <emissivemap_fragment>
+             {
+               float wdepth = uWaterLevel - vFogWorld.y;
+               if ( wdepth > 0.0 ) {
+                 vec2 cp = vFogWorld.xz;
+                 float t = uCausticTime;
+                 float c = sin( cp.x * 1.7 + sin( cp.y * 1.1 + t * 0.7 ) * 2.0 + t * 0.9 )
+                         + sin( cp.y * 1.9 - sin( cp.x * 1.3 - t * 0.5 ) * 2.0 + t * 1.1 );
+                 c = pow( clamp( c * 0.25 + 0.5, 0.0, 1.0 ), 6.0 );
+                 float atten = exp( -wdepth * 0.9 ) * ( 1.0 - smoothstep( 0.0, 2.2, wdepth ) );
+                 totalEmissiveRadiance += vec3( 1.0, 0.92, 0.72 ) * c * atten * 0.55;
+               }
+             }`
+          );
+      }, 'caustics');
+      return mat;
+    },
+
     // Storskala-variation: en langsom støjtekstur der bryder gentagelsen
     // i den lille tekstur, så sandet ikke ser ud som tapet.
     macroVariation: function (mat, texture, scale, strength) {

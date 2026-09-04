@@ -16,7 +16,8 @@
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 0.78;
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.VSMShadowMap;   // ægte blød skyggekant
+    renderer.shadowMap.autoUpdate = false;   // styres manuelt i render-løkken
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(66, window.innerWidth / window.innerHeight, 0.08, 1400);
@@ -27,17 +28,36 @@
 
     const steps = [
       ['Blander sand og sten…', function () { tex = O.textures.build(renderer); }],
-      ['Rejser himlen…', function () { sky = O.buildSky(scene, renderer); }],
-      ['Former flodlejet…', function () { terrain = O.buildTerrain(scene, tex); }],
+      ['Rejser himlen…', function () { sky = O.buildSky(scene, renderer, camera); }],
+      ['Former flodlejet…', function () { terrain = O.buildTerrain(scene, tex, timeUniform); }],
       ['Stabler kløftens lag…', function () { cliffs = O.buildCliffs(scene, tex); }],
       ['Fylder vand i oasen…', function () { water = O.buildWater(scene, renderer, camera, sky); }],
       ['Sår græs og tænder bål…', function () { props = O.buildProps(scene, tex, timeUniform); }],
       ['Spreder sten på bredden…', function () { stones = O.buildStones(scene, tex); }],
+      ['Kobler skygger på…', function () {
+        const seen = new Set();
+        scene.traverse(function (obj) {
+          const mats = obj.material ? (Array.isArray(obj.material) ? obj.material : [obj.material]) : [];
+          for (const m of mats) {
+            if (!m || seen.has(m) || !m.isMeshStandardMaterial) continue;
+            seen.add(m);
+            // CSM.setupMaterial overskriver onBeforeCompile, så vores egne
+            // indgreb hægtes på igen bagefter.
+            const prev = m.onBeforeCompile;
+            sky.csm.setupMaterial(m);
+            const csmHook = m.onBeforeCompile;
+            m.onBeforeCompile = function (shader, r) {
+              csmHook.call(this, shader, r);
+              if (prev) prev.call(this, shader, r);
+            };
+            m.needsUpdate = true;
+          }
+        });
+      }],
       ['Blander farverne…', function () { post = O.buildPost(renderer, scene, camera); }],
       ['Snører støvlerne…', function () {
         player = O.buildPlayer(camera, canvas);
         audio = O.buildAudio();
-        sky.light.target.position.set(player.pos.x, 0, player.pos.z);
       }]
     ];
 
@@ -110,6 +130,7 @@
       window.addEventListener('resize', function () {
         camera.aspect = window.innerWidth / window.innerHeight;
         camera.updateProjectionMatrix();
+        sky.csm.updateFrustums();
         renderer.setSize(window.innerWidth, window.innerHeight);
         post.resize();
         water.resize();
@@ -138,15 +159,15 @@
         props.fire.update(t, dt);
         props.dust.update(t, camera.position);
 
-        // Skyggekeglen følger spilleren, så skyggerne altid er skarpe.
-        sky.light.position.set(
-          player.pos.x + sky.sun.x * 180,
-          sky.sun.y * 180,
-          player.pos.z + sky.sun.z * 180
-        );
-        sky.light.target.position.set(player.pos.x, 0, player.pos.z);
-        sky.light.target.updateMatrixWorld();
+        // Kaskaderne følger kameraet, så det nære altid får den skarpeste
+        // skyggeopløsning.
+        camera.updateMatrixWorld();
+        sky.csm.update();
         sky.uniforms.uTime.value = t;
+
+        // Skyggekortene tegnes én gang pr. billede — vandets ekstra pas
+        // genbruger dem.
+        renderer.shadowMap.needsUpdate = true;
 
         water.uniforms.uTime.value = t;
         water.uniforms.uCamPos.value.copy(camera.position);
@@ -174,9 +195,11 @@
             renderer.setPixelRatio(pixelRatio);
             post.resize();
             post.setQuality(false);
+            water.setQuality(false);
           } else if (avg < 0.016 && quality === 0) {
             quality = 1;
             post.setQuality(true);
+            water.setQuality(true);
           }
           frames = 0; frameAcc = 0;
         }

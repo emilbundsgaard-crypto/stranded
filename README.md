@@ -65,48 +65,59 @@ som ligger i `vendor/`). Filerne indlæses i rækkefølge og deler navnerummet
 | Fil | Ansvar |
 | --- | --- |
 | `src/00-core.js` | matematik, støjfunktioner, farvekonvertering, konfiguration |
+| `src/15-atmosphere.js` | luften: retningsbestemt indspredning, højdeprofil og varmt jordskær |
 | `src/25-shaderlib.js` | indgreb i standardmaterialet: ekstra detaljenormal, våd overflade, storskala-variation |
 | `src/10-world.js` | flodens forløb og terrænets højdefunktion — alle andre moduler spørger herind |
 | `src/20-textures.js` | sand, sandsten, sten, græs, bølgenormaler og skum tegnet på canvas — med farve-, normal- og ruhedskort |
 | `src/30-terrain.js` | terrænmesh med vertexfarver (våd sand, tør sand, grus, grønt bånd) |
 | `src/40-cliffs.js` | mesaer som indekserede gitre med lagprofil, lodrette render og udhæng |
-| `src/50-sky.js` | atmosfærisk himmel, miljøkort (IBL) bagt fra himlen, sol, skygger og fyldlys |
+| `src/50-sky.js` | atmosfærisk himmel, miljøkort (IBL) bagt fra himlen, kaskade-skygger og fyldlys |
 | `src/60-water.js` | vandet: planspejling, brydning, absorption efter dybde, kaustik og skum |
 | `src/70-props.js` | græs i klynger, buske, nedfaldsklippe, grus, drivtømmer, bål, støv |
 | `src/80-stones.js` | de sten man kan samle op, og deres sjældenhed |
 | `src/85-player.js` | bevægelse, kollision, vadning, hovedbevægelse og hånden |
 | `src/90-audio.js` | vind, vand, skridt og opsamlingsklang syntetiseret med WebAudio |
 | `src/95-hud.js` | sigtekorn, prompt, lomme og beskeder |
-| `src/97-post.js` | efterbehandling: bloom, filmisk farvegradering, vignet og kantudjævning |
+| `src/97-post.js` | render-pipeline: HDR-buffer, ambient occlusion, solstråler, bloom, filmisk gradering, SMAA |
 | `src/99-main.js` | opstart, indlæsningsskærm og renderløkke |
 
-Et par detaljer der gør udslaget:
+Det tunge lag — hvad der faktisk giver dybden:
 
 - **Lyset kommer fra hele himlen.** Himlen renderes én gang til et miljøkort
   (PMREM), som alle materialer bruger. Uden det bliver alt i skygge fladt og
-  gråt; med det får sand og klipper himlens farve ovenfra.
-- **Spejlingen i vandet** er ikke en tekstur. Scenen renderes en ekstra gang
-  fra et kamera spejlet i vandfladen, og en tredje gang uden vandet, så
-  overfladen både kan spejle kløften og vise bunden gennem det klare vand.
-  Begge hjælpebilleder gemmes i half-float, så sol og lyse klipper ikke
-  klippes til hvidt — det er ellers præcis dét, der får vand til at ligne mælk.
-- **Dybden styrer farven.** Et dybdekort bages fra samme højdefunktion som
-  terrænet, og lyset slukkes eksponentielt med dybden (rødt først). Derfor er
-  det lave vand sandfarvet og det dybe grønblåt, med kaustik og en smal
-  skumbræmme langs kanten.
-- **Kløftens lag er geometri.** Hver formation er et indekseret gitter, hvor
-  radius bestemmes af en lagprofil med hylder og udhæng plus lodret erosion.
-  Bløde normaler og nedfaldsklippe ved foden fjerner det kantede lav-poly-look.
-- **Våd sand er blank.** En vertex-attribut markerer bræmmen langs vandkanten,
-  og materialet gør den både mørkere og mere spejlende dér — men kun ovenfor
-  vandet, for under vandet klarer absorptionen det selv.
-- **Efterbehandling** binder billedet sammen: bloom på de lyseste steder,
-  filmisk kurve med varme højlys og kølige skygger, vignet og — på WebGL2 —
-  ægte multisamplet kantudjævning.
-- **Ydelse**: græs, sten og grus tegnes som instanser, klipperne er flettet
-  til ét mesh, og de to ekstra vandpas kører i nedsat opløsning, springer det
-  mindste pynt over og slukkes helt, når man er langt fra vandet. Falder
-  billedraten, skruer spillet selv ned for opløsning og bloom.
+  gråt.
+- **Kaskade-skygger (CSM).** Ét skyggekort kan ikke dække både grusset ved
+  fødderne og klippen 150 m væk. Synsfeltet deles i tre kaskader, så det nære
+  får sin egen høje opløsning, og skyggerne sløres i selve skyggekortet (VSM),
+  så kanten har en halvskygge i stedet for at være klippet.
+- **Ambient occlusion** beregnes fra scenens dybdebuffer — altså uden et
+  eneste ekstra geometri-pas. Det er det bløde mørke i sprækker, under sten og
+  hvor græsset møder jorden; øjet bruger det til at afgøre, om ting rent
+  faktisk står på jorden.
+- **Luften mellem os og klipperne** er ikke bare én tågefarve. Indspredningen
+  er retningsbestemt (luften lyser kraftigst mod solen), ligger tættest nede
+  ved floden og får et varmt skær af støvet nær jorden.
+- **Parallax occlusion mapping**: blikket marcherer ned i højdekortet, så
+  sandribber og stenlag skygger for hinanden i stedet for at være en flad
+  tegning. Effekten tones ud med afstanden.
+- **Solstråler** dannes kun af selve solskiven — sætter man tærsklen for lavt,
+  smører hele himlens lys sig ud som en hvid dis.
+- **Vandet** spejler scenen fra et spejlvendt kamera i fuld opløsning (en
+  uskarp spejling ligner tåge) og bryder den fra et tredje pas, så man ser
+  bunden gennem det klare vand. Begge hjælpebilleder er half-float, ellers
+  klippes sol og lyse klipper til hvidt. Lyset slukkes eksponentielt med
+  dybden — rødt først — og kaustikken tegnes på bunden, hvor den hører til.
+- **Kløftens lag er geometri**: indekserede gitre med lagprofil, hylder,
+  udhæng og lodret erosion, bløde normaler og nedfaldsklippe ved foden.
+- **Bevoksningen** er fire arter — friskt græs, tørt strå, brede blade og tørre
+  buske — sået i klynger, hvor arten følger fugtigheden. Ensartet bevoksning
+  er en af de tydeligste røbere af noget computergenereret.
+- **Ydelse**: alt græs, sten og grus tegnes som instanser, klipperne er flettet
+  til ét mesh, skyggekortene tegnes én gang pr. billede (ikke også i vandets
+  ekstra pas), og de to vandpas springer det mindste pynt over og slukkes
+  langt fra vandet. Falder billedraten, skruer spillet selv ned for
+  ambient occlusion, solstråler, bloom, vandets opløsning og til sidst
+  billedopløsningen.
 
 ## Værktøjer
 

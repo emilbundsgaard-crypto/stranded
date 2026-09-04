@@ -91,6 +91,9 @@
     worldSize: 340,      // terrænets kant-til-kant størrelse
     playRadius: 108,     // hvor langt spilleren kan gå ud
     fogColor: 0xcfd8e4,
-    sunDirection: { x: -0.52, y: 0.62, z: -0.58 }
+    // Solen står højt og lidt bag højre skulder set fra startstedet, så
+    // sandbredden er solbeskinnet og klippernes skygger falder væk fra
+    // betragteren. Lav sol så kløften kastede skygge over hele bredden.
+    sunDirection: { x: 0.36, y: 0.80, z: -0.48 }
   };
 })();

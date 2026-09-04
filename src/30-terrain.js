@@ -31,9 +31,14 @@
     const wet = (1 - M.smoothstep(-0.02, 0.36, h - wl)) * M.smoothstep(-0.5, -0.02, h - wl);
     r = M.lerp(r, 0.55, wet); g = M.lerp(g, 0.45, wet); b = M.lerp(b, 0.33, wet);
 
+    // Sand under vand er vådt sand: mørkere og mere mættet, allerede få
+    // centimeter nede. Ellers lyser bunden hvidt igennem det lave vand.
+    const submerged = M.smoothstep(0.0, 0.35, wl - h);
+    r = M.lerp(r, 0.50, submerged); g = M.lerp(g, 0.42, submerged); b = M.lerp(b, 0.31, submerged);
+
     // Først på dybere vand kommer alger og slam til.
     const bed = M.smoothstep(0.55, 2.4, wl - h);
-    r = M.lerp(r, 0.44, bed); g = M.lerp(g, 0.44, bed); b = M.lerp(b, 0.32, bed);
+    r = M.lerp(r, 0.40, bed); g = M.lerp(g, 0.41, bed); b = M.lerp(b, 0.30, bed);
 
     // Det grønne bånd langs vandet.
     const green = lush * 0.5;
@@ -47,7 +52,7 @@
                       * M.smoothstep(-0.32, -0.02, h - wl) * 0.95, 0, 1);
   }
 
-  O.buildTerrain = function (scene, tex) {
+  O.buildTerrain = function (scene, tex, timeUniform) {
     const size = O.config.worldSize;
     const seg = 260;
     const geo = new THREE.PlaneGeometry(size, size, seg, seg);
@@ -81,9 +86,11 @@
       metalness: 0.0,
       envMapIntensity: 0.7
     });
+    O.shaderlib.parallax(mat, tex.sandNormal, 0.010, 16.0);
     O.shaderlib.detailNormal(mat, tex.detailNormal, 6.0, 0.30);
     O.shaderlib.macroVariation(mat, tex.macro, 0.030, 0.35);
     O.shaderlib.wetness(mat, 0.45);
+    O.shaderlib.caustics(mat, timeUniform, O.config.waterLevel);
 
     const mesh = new THREE.Mesh(geo, mat);
     mesh.receiveShadow = true;

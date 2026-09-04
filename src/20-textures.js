@@ -74,7 +74,8 @@
         img.data[i] = (nx / l * 0.5 + 0.5) * 255;
         img.data[i + 1] = (ny / l * 0.5 + 0.5) * 255;
         img.data[i + 2] = (nz / l * 0.5 + 0.5) * 255;
-        img.data[i + 3] = 255;
+        // Selve højden gemmes i alfakanalen — parallax-mapping læser den her.
+        img.data[i + 3] = data[(y * w + x) * 4];
       }
     }
     octx.putImageData(img, 0, 0);
@@ -122,7 +123,7 @@
 
   /* ---------- Sandsten ---------- */
   function rockMaps() {
-    const S = 512;
+    const S = 1024;   // klippen fylder mest på skærmen — den får den fine tekstur
     const col = canvas(S), hgt = canvas(S), rough = canvas(S);
     const ci = col.getContext('2d').createImageData(S, S);
     const hi = hgt.getContext('2d').createImageData(S, S);
@@ -132,7 +133,7 @@
     const beds = [];
     let yy = 0;
     while (yy < 1) {
-      const t = 0.018 + ihash(beds.length * 13, 7) * 0.055;
+      const t = 0.020 + ihash(beds.length * 13, 7) * 0.055;
       beds.push({
         y0: yy, y1: Math.min(1, yy + t),
         tint: 0.80 + ihash(beds.length * 5, 11) * 0.42,
@@ -150,17 +151,17 @@
       for (let x = 0; x < S; x++) {
         const i = (y * S + x) * 4;
         // Lagene bølger, så de ikke ligner streger tegnet med lineal.
-        const warp = tfbm(x * 0.006, y * 0.02, 3) * 26 - 13;
+        const warp = tfbm(x * 0.003, y * 0.01, 3) * 52 - 26;
         const yy2 = y + warp;
         const bed = bedAt(M.clamp(yy2 / S, 0, 0.999));
 
         // Lamination inde i hver bænk.
-        const lam = Math.sin(yy2 * 0.9 + tfbm(x * 0.02, yy2 * 0.05, 2) * 6) * 0.5 + 0.5;
-        const grain = tfbm(x * 0.16, yy2 * 0.55, 4) - 0.5;
-        const crack = tridged(x * 0.045, yy2 * 0.022, 4);
+        const lam = Math.sin(yy2 * 0.45 + tfbm(x * 0.01, yy2 * 0.025, 2) * 6) * 0.5 + 0.5;
+        const grain = tfbm(x * 0.09, yy2 * 0.30, 4) - 0.5;
+        const crack = tridged(x * 0.022, yy2 * 0.011, 4);
         // Lodret "desert varnish" der løber ned ad væggen.
-        const varnish = tfbm(x * 0.075, yy2 * 0.004, 3);
-        const pit = tridged(x * 0.5, yy2 * 0.5, 2);
+        const varnish = tfbm(x * 0.037, yy2 * 0.002, 3);
+        const pit = tridged(x * 0.25, yy2 * 0.25, 2);
 
         const shade = 0.76 + lam * 0.17 + grain * 0.22
                     - Math.pow(crack, 2.6) * 0.22
@@ -200,15 +201,16 @@
         const i = (y * S + x) * 4;
         const base = tfbm(x * 0.05, y * 0.05, 4);       // store pletter
         const grain = tfbm(x * 0.6, y * 0.6, 3);        // korn
-        const fleck = ihash(x, y) > 0.988 ? 0.5 : 0;    // lyse krystaller
-        const dark = ihash(x + 3, y + 9) > 0.992 ? -0.35 : 0;
+        const fleck = ihash(x, y) > 0.994 ? 0.22 : 0;   // enkelte lyse korn
+        const dark = ihash(x + 3, y + 9) > 0.990 ? -0.22 : 0;
         const crack = tridged(x * 0.12, y * 0.12, 3);
-        const v = 0.46 + (base - 0.5) * 0.42 + (grain - 0.5) * 0.30 + fleck + dark
-                - Math.pow(crack, 4.0) * 0.22;
-        const warm = 0.86 + base * 0.28;
-        ci.data[i] = M.clamp(196 * v * warm + 26, 0, 255);
-        ci.data[i + 1] = M.clamp(178 * v * (0.94 + base * 0.1) + 24, 0, 255);
-        ci.data[i + 2] = M.clamp(154 * v * 0.92 + 22, 0, 255);
+        const v = 0.50 + (base - 0.5) * 0.30 + (grain - 0.5) * 0.22 + fleck + dark
+                - Math.pow(crack, 4.0) * 0.20;
+        const warm = 0.90 + base * 0.22;
+        // Ørkensten er varm og dæmpet — ikke granit.
+        ci.data[i] = M.clamp(150 * v * warm + 30, 0, 255);
+        ci.data[i + 1] = M.clamp(126 * v * (0.95 + base * 0.08) + 24, 0, 255);
+        ci.data[i + 2] = M.clamp(96 * v * 0.94 + 18, 0, 255);
         ci.data[i + 3] = 255;
         const hv = M.clamp((0.45 + (grain - 0.5) * 0.7 + fleck - Math.pow(crack, 4.0) * 0.6) * 255, 0, 255);
         hi.data[i] = hi.data[i + 1] = hi.data[i + 2] = hv; hi.data[i + 3] = 255;
@@ -258,35 +260,82 @@
     return c;
   }
 
-  /* ---------- Græstot ---------- */
-  function grassTexture() {
+  /* ---------- Planter ---------- */
+  // Fire varianter: friskt græs ved vandet, tørt strå længere oppe, brede
+  // blade i klumperne og en tør busk. Ensartet bevoksning er en af de
+  // tydeligste røbere af at noget er computergenereret.
+  function bladeTexture(opts) {
     const W = 256, H = 256;
     const c = canvas(W, H);
     const ctx = c.getContext('2d');
     ctx.clearRect(0, 0, W, H);
-    const rnd = M.mulberry32(9182);
+    const rnd = M.mulberry32(opts.seed);
 
-    for (let i = 0; i < 64; i++) {
-      const x0 = 22 + rnd() * (W - 44);
+    for (let i = 0; i < opts.count; i++) {
+      const x0 = 20 + rnd() * (W - 40);
       const dir = x0 < W / 2 ? -1 : 1;
-      const lean = dir * (18 + rnd() * 92) * (0.4 + rnd() * 1.0);
-      const h = H * (0.30 + rnd() * 0.58);
-      const wBlade = 3.0 + rnd() * 5.0;
+      const lean = dir * opts.lean * (0.3 + rnd() * 1.1);
+      const h = H * (opts.hMin + rnd() * (opts.hMax - opts.hMin));
+      const wBlade = opts.wMin + rnd() * (opts.wMax - opts.wMin);
       const dry = rnd();
+      const pal = dry > opts.dryMix ? opts.dryPal : opts.freshPal;
       const g = ctx.createLinearGradient(0, H, 0, H - h);
-      g.addColorStop(0, 'rgba(52,62,24,1)');
-      g.addColorStop(0.35, dry > 0.5 ? 'rgba(132,130,58,1)' : 'rgba(88,120,42,1)');
-      g.addColorStop(0.8, dry > 0.5 ? 'rgba(186,174,96,1)' : 'rgba(136,162,70,1)');
-      g.addColorStop(1, dry > 0.5 ? 'rgba(214,200,128,1)' : 'rgba(166,186,96,1)');
+      g.addColorStop(0, pal[0]);
+      g.addColorStop(0.4, pal[1]);
+      g.addColorStop(1, pal[2]);
       ctx.strokeStyle = g;
       ctx.lineWidth = wBlade;
-      ctx.lineCap = 'round';
+      ctx.lineCap = opts.round === false ? 'butt' : 'round';
       ctx.beginPath();
       ctx.moveTo(x0, H + 6);
-      ctx.quadraticCurveTo(x0 + lean * 0.22, H - h * 0.66, x0 + lean, H - h);
+      ctx.quadraticCurveTo(x0 + lean * 0.25, H - h * 0.66, x0 + lean, H - h);
       ctx.stroke();
     }
 
+    const t = new THREE.CanvasTexture(c);
+    t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+    t.anisotropy = maxAniso;
+    t.encoding = THREE.sRGBEncoding;
+    return t;
+  }
+
+  // Tør busk: forgrenede kviste med nogle få blade tilbage.
+  function shrubTexture() {
+    const W = 256, H = 256;
+    const c = canvas(W, H);
+    const ctx = c.getContext('2d');
+    ctx.clearRect(0, 0, W, H);
+    const rnd = M.mulberry32(4711);
+
+    function branch(x, y, ang, len, width, depth) {
+      const nx = x + Math.cos(ang) * len;
+      const ny = y - Math.sin(ang) * len;
+      ctx.strokeStyle = depth > 1 ? 'rgba(96,78,54,1)' : 'rgba(124,104,72,1)';
+      ctx.lineWidth = width;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.quadraticCurveTo((x + nx) / 2 + (rnd() - 0.5) * 12, (y + ny) / 2, nx, ny);
+      ctx.stroke();
+      if (depth <= 0 || len < 12) {
+        if (rnd() < 0.55) {          // et enkelt blad i spidsen
+          ctx.fillStyle = rnd() < 0.5 ? 'rgba(108,124,58,0.95)' : 'rgba(150,142,74,0.95)';
+          ctx.beginPath();
+          ctx.ellipse(nx, ny, 3 + rnd() * 4, 1.6 + rnd() * 2.2, rnd() * 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        return;
+      }
+      const n = 2 + (rnd() * 2 | 0);
+      for (let i = 0; i < n; i++) {
+        branch(nx, ny, ang + (rnd() - 0.5) * 1.1, len * (0.55 + rnd() * 0.25),
+               width * 0.62, depth - 1);
+      }
+    }
+    for (let i = 0; i < 5; i++) {
+      branch(W / 2 + (rnd() - 0.5) * 60, H + 4, Math.PI / 2 + (rnd() - 0.5) * 0.9,
+             48 + rnd() * 26, 4.5, 3);
+    }
 
     const t = new THREE.CanvasTexture(c);
     t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
@@ -369,7 +418,23 @@
         stone: toTexture(stone.color, 2, true),
         stoneNormal: toTexture(stone.normal, 2),
         macro: toTexture(macroMap(), 1),
-        grass: grassTexture(),
+        grassFresh: bladeTexture({
+          seed: 9182, count: 64, lean: 70, hMin: 0.30, hMax: 0.88, wMin: 3.0, wMax: 8.0, dryMix: 0.6,
+          freshPal: ['rgba(46,58,22,1)', 'rgba(84,116,40,1)', 'rgba(160,182,92,1)'],
+          dryPal: ['rgba(56,58,26,1)', 'rgba(126,124,54,1)', 'rgba(206,192,120,1)']
+        }),
+        grassDry: bladeTexture({
+          seed: 3311, count: 54, lean: 96, hMin: 0.42, hMax: 1.0, wMin: 2.0, wMax: 5.0, dryMix: 0.25,
+          freshPal: ['rgba(58,58,28,1)', 'rgba(118,112,52,1)', 'rgba(196,180,108,1)'],
+          dryPal: ['rgba(62,56,28,1)', 'rgba(142,126,62,1)', 'rgba(220,204,140,1)']
+        }),
+        grassBroad: bladeTexture({
+          seed: 7755, count: 26, lean: 44, hMin: 0.24, hMax: 0.62, wMin: 7.0, wMax: 16.0, dryMix: 0.85,
+          round: false,
+          freshPal: ['rgba(32,50,20,1)', 'rgba(62,96,36,1)', 'rgba(108,142,62,1)'],
+          dryPal: ['rgba(46,52,24,1)', 'rgba(96,104,44,1)', 'rgba(150,152,80,1)']
+        }),
+        shrub: shrubTexture(),
         foam: foamTexture(),
         waterNormal: toTexture(waterNormalMap(), 1),
         glow: glowTexture(),

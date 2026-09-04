@@ -47,6 +47,8 @@
       vec4 mvPosition = viewMatrix * world;
       gl_Position = projectionMatrix * mvPosition;
       vScreen = gl_Position;
+      // Atmosfære-chunken læser 'transformed' (som i three's egne shadere).
+      vec3 transformed = position;
       #include <fog_vertex>
     }
   `;
@@ -66,6 +68,9 @@
     uniform vec3 uSunColor;
     uniform vec3 uCamPos;
     uniform float uDebug;
+    uniform vec3 uHorizonColor;
+    uniform vec3 uZenithColor;
+    uniform float uFoamAmount;
     varying vec4 vReflectCoord;
     varying vec4 vScreen;
     varying vec3 vWorld;
@@ -126,16 +131,22 @@
       vec3 scatter = mix(vec3(0.06, 0.15, 0.15), vec3(0.02, 0.08, 0.13), smoothstep(0.5, 2.6, depth));
       vec3 body = bottom * trans + scatter * (1.0 - trans);
 
-      // Kaustik: bølgerne samler sollys i lyse bånd på bunden.
-      float caus = swell(vWorld.xz * 1.9 + n.xz * 3.0) + texture2D(uNormalMap, vWorld.xz * 0.09 + uTime * vec2(0.006, 0.004)).z;
-      caus = pow(clamp(caus * 0.45 + 0.35, 0.0, 1.0), 5.0);
-      body += uSunColor * caus * 0.55 * (1.0 - smoothstep(0.05, 1.6, depth)) * trans;
+      // (Ingen kaustik her: den hører til på bunden, og terrænmaterialet
+      //  tegner den allerede dér. Lagde man den oveni på selve overfladen,
+      //  blev hele det lave vand dækket af et bredt lyst slør.)
 
       // --- Spejling ---
+      // Spejlbilledet er kun kendt dér, hvor det faktisk blev renderet. Når
+      // koordinatet falder uden for kanten, må der ikke bare smøres kantpixel
+      // ud over vandet (det er dét, der ligner tåge) — der tones over i
+      // himlens farve i stedet.
       float distort = mix(0.006, 0.045, smoothstep(0.0, 1.2, depth));
       vec2 ruv = vReflectCoord.xy / max(vReflectCoord.w, 0.0001);
       ruv += n.xz * distort;
-      vec3 reflection = texture2D(uReflect, clamp(ruv, 0.002, 0.998)).rgb;
+      float edgeDist = min(min(ruv.x, 1.0 - ruv.x), min(ruv.y, 1.0 - ruv.y));
+      float inside = smoothstep(0.0, 0.045, edgeDist);
+      vec3 skyApprox = mix(uHorizonColor, uZenithColor, clamp(0.35 + n.y * 0.4, 0.0, 1.0));
+      vec3 reflection = mix(skyApprox, texture2D(uReflect, clamp(ruv, 0.002, 0.998)).rgb, inside);
 
       vec3 col = mix(body, reflection, fres);
 
@@ -143,17 +154,19 @@
       vec3 hvec = normalize(normalize(uSun) + viewDir);
       float ndh = max(dot(n, hvec), 0.0);
       col += uSunColor * pow(ndh, 700.0) * 3.0;
-      col += uSunColor * pow(ndh, 60.0) * 0.07;
+      col += uSunColor * pow(ndh, 90.0) * 0.05;
 
       // --- Skum langs vandkanten ---
-      float edge = 1.0 - smoothstep(0.0, 0.05, depth);
+      float edge = 1.0 - smoothstep(0.0, 0.035, depth);
       float band = sin(depth * 90.0 - uTime * 1.4 + swell(vWorld.xz * 2.0) * 2.0) * 0.5 + 0.5;
       float foamTex = texture2D(uFoam, vWorld.xz * 0.7 + n.xz * 0.05 + uTime * vec2(0.004, 0.003)).r;
-      float foam = clamp(edge * (0.35 + 0.65 * band) * smoothstep(0.35, 0.8, foamTex), 0.0, 1.0);
-      col = mix(col, vec3(0.88, 0.87, 0.83), foam * 0.4);
+      float foam = clamp(edge * (0.35 + 0.65 * band) * smoothstep(0.35, 0.8, foamTex), 0.0, 1.0) * uFoamAmount;
+      col = mix(col, vec3(0.86, 0.85, 0.81), foam * 0.28);
 
-      float alpha = mix(0.45, 0.98, smoothstep(0.0, 0.14, depth));
-      alpha = max(alpha, foam * 0.55);
+      // Med et rigtigt brydningsbillede er der ingen grund til at blande
+      // vandet halvgennemsigtigt oven på terrænet — det er netop dét, der
+      // gør det lave vand mælket. Kun de yderste centimeter fades.
+      float alpha = smoothstep(0.0, 0.03, depth);
 
       if (uDebug > 1.5) { gl_FragColor = vec4(reflection, 1.0); }
       else if (uDebug > 0.5) { gl_FragColor = vec4(bottom, 1.0); }
@@ -185,8 +198,8 @@
       rt.userData = { scale: scale };
       return rt;
     }
-    const reflectRT = makeTarget(0.55);
-    const refractRT = makeTarget(0.42);
+    const reflectRT = makeTarget(1.0);    // fuld opløsning: en uskarp spejling ligner tåge
+    const refractRT = makeTarget(0.75);
 
     const uniforms = THREE.UniformsUtils.merge([
       THREE.UniformsLib.fog,
@@ -199,7 +212,10 @@
         uSun: { value: new THREE.Vector3() },
         uSunColor: { value: new THREE.Color(1.0, 0.93, 0.80) },
         uCamPos: { value: new THREE.Vector3() },
-        uDebug: { value: 0 }
+        uDebug: { value: 0 },
+        uHorizonColor: { value: new THREE.Color(0.62, 0.66, 0.72) },
+        uZenithColor: { value: new THREE.Color(0.26, 0.42, 0.72) },
+        uFoamAmount: { value: 0.45 }
       }
     ]);
     uniforms.uReflect.value = reflectRT.texture;
@@ -288,14 +304,24 @@
 
     function resize() {
       const p = Math.min(window.devicePixelRatio, 2);
+      /* eslint-disable-next-line no-use-before-define */
       for (const rt of [reflectRT, refractRT]) {
         rt.setSize(
-          Math.max(2, Math.floor(window.innerWidth * p * rt.userData.scale)),
-          Math.max(2, Math.floor(window.innerHeight * p * rt.userData.scale))
+          Math.max(2, Math.floor(window.innerWidth * p * rt.userData.scale * quality)),
+          Math.max(2, Math.floor(window.innerHeight * p * rt.userData.scale * quality))
         );
       }
     }
 
-    return { mesh: mesh, uniforms: uniforms, update: update, resize: resize };
+    // Ydelsestrappe: på en presset maskine koster de to hjælpebilleder mest,
+    // så de skrumper først.
+    let quality = 1.0;
+    function setQuality(high) {
+      quality = high ? 1.0 : 0.55;
+      resize();
+    }
+
+    return { mesh: mesh, uniforms: uniforms, update: update, resize: resize,
+             setQuality: setQuality, get quality() { return quality; } };
   };
 })();

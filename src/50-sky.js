@@ -91,7 +91,7 @@
     }
   `;
 
-  O.buildSky = function (scene, renderer) {
+  O.buildSky = function (scene, renderer, camera) {
     const s = O.config.sunDirection;
     const sun = new THREE.Vector3(s.x, s.y, s.z).normalize();
 
@@ -138,41 +138,58 @@
       pmrem.dispose();
     }
 
-    /* ---- Sollys ---- */
-    const sunLight = new THREE.DirectionalLight(O.srgb(0xfff2dc), 2.70);
-    sunLight.position.copy(sun).multiplyScalar(180);
-    sunLight.castShadow = true;
-    sunLight.shadow.mapSize.set(4096, 4096);
-    const d = 130;   // bred nok til at klippernes skygger også falder på hinanden
-    sunLight.shadow.camera.left = -d;
-    sunLight.shadow.camera.right = d;
-    sunLight.shadow.camera.top = d;
-    sunLight.shadow.camera.bottom = -d;
-    sunLight.shadow.camera.near = 1;
-    sunLight.shadow.camera.far = 420;
-    sunLight.shadow.bias = -0.0006;
-    sunLight.shadow.normalBias = 0.35;
-    scene.add(sunLight);
-    scene.add(sunLight.target);
+    /* ---- Luften mellem os og klipperne ---- */
+    O.atmosphere.install({
+      sunDirection: sun,
+      sunColor: 0xffe0ae,
+      groundColor: 0xd8b88c
+    });
 
-    // Skyggefyld. I virkeligheden er en skygge ikke sort — den er belyst
-    // af den blå himmelkuppel ovenfra og af varmt lys kastet tilbage fra
-    // sandet. Uden de to bliver alt i skygge rødbrunt og dødt.
-    const hemi = new THREE.HemisphereLight(O.srgb(0xc3dbfb), O.srgb(0xd0a878), 0.80);
+    /* ---- Sollys med kaskade-skygger ---- */
+    // Ét skyggekort skal dække både grusset ved fødderne og klippen 150 m
+    // væk; det kan ikke lade sig gøre skarpt. Kaskader deler synsfeltet op,
+    // så det nære får sin egen høje opløsning.
+    const csm = new THREE.CSM({
+      maxFar: 240,
+      cascades: 3,
+      mode: 'practical',
+      parent: scene,
+      shadowMapSize: 2048,
+      lightDirection: sun.clone().negate(),
+      lightIntensity: 2.70,
+      lightMargin: 220,
+      shadowBias: -0.00008,
+      camera: camera
+    });
+    csm.fade = true;
+    const normalBias = [0.02, 0.08, 0.30];
+    csm.lights.forEach(function (l, i) {
+      l.color.copy(O.srgb(0xfff2dc));
+      l.shadow.normalBias = normalBias[i] || 0.3;
+      l.shadow.mapSize.set(2048, 2048);
+      // VSM sløres i skyggekortet selv — en kant uden halvskygge er dét,
+      // der får skygger til at se klippet ud.
+      l.shadow.radius = [2.5, 4.0, 6.0][i] || 4.0;
+      l.shadow.bias = 0.0;
+    });
+
+    // Skyggefyld. En skygge i ørkenen er ikke sort — den er belyst af den
+    // blå himmelkuppel og af varmt lys kastet tilbage fra sandet.
+    const hemi = new THREE.HemisphereLight(O.srgb(0xd3e1f4), O.srgb(0xe3b184), 0.85);
     scene.add(hemi);
 
-    const bounce = new THREE.DirectionalLight(O.srgb(0xffd9ae), 0.25);
-    bounce.position.set(-sun.x * 60, 14, -sun.z * 60);
-    scene.add(bounce);
+    // (Intet ekstra retningsbestemt bouncelys: kaskade-skyggerne kræver, at
+    // scenens retningsbestemte lys ER kaskaderne. Det varme tilbagekast fra
+    // sandet leveres af himmellysets jordfarve og af miljøkortet.)
 
-    const ambient = new THREE.AmbientLight(O.srgb(0x9b8f7c), 0.18);
+    const ambient = new THREE.AmbientLight(O.srgb(0xc09a6e), 0.40);
     scene.add(ambient);
 
     scene.fog = new THREE.FogExp2(O.srgb(0xd3cec4), 0.0042);
 
     return {
-      mesh: mesh, uniforms: uniforms, sun: sun,
-      light: sunLight, bounce: bounce, hemi: hemi, ambient: ambient, envMap: envMap
+      mesh: mesh, uniforms: uniforms, sun: sun, csm: csm,
+      hemi: hemi, ambient: ambient, envMap: envMap
     };
   };
 })();

@@ -329,6 +329,7 @@
       metalness: 0.0,
       envMapIntensity: 0.9
     });
+    O.shaderlib.parallax(mat, tex.rockNormal, 0.022, 30.0);
     O.shaderlib.detailNormal(mat, tex.detailNormal, 9.0, 0.45);
     const mesh = new THREE.Mesh(geo, mat);
     mesh.castShadow = true;

@@ -107,62 +107,82 @@
     };
 
     /* ---------- Hånden ---------- */
-    // En simpel, lav-poly hånd der kommer ind fra nederste højre hjørne
-    // med en pind i næven — samme greb som i referencen.
+    // Bygget af primitiver, men med rigtige led: håndryg, knoer, fire fingre
+    // med to led hver, og en tommel der lukker om pinden. Silhuetten er det,
+    // øjet læser — derfor er fingrene bøjet omkring træet og ikke bare
+    // stænger ved siden af.
     const hand = new THREE.Group();
-    const skin = new THREE.MeshStandardMaterial({ color: O.srgb(0x8a5c38), roughness: 0.78, metalness: 0.0, envMapIntensity: 0.35 });
+    const skin = new THREE.MeshStandardMaterial({
+      color: O.srgb(0x6f4527), roughness: 0.72, metalness: 0.0, envMapIntensity: 0.4
+    });
     const sleeve = new THREE.MeshStandardMaterial({ color: O.srgb(0x574c3a), roughness: 0.98 });
-    const wood = new THREE.MeshStandardMaterial({ color: O.srgb(0x4a3524), roughness: 0.9, envMapIntensity: 0.3 });
+    const wood = new THREE.MeshStandardMaterial({ color: O.srgb(0x4a3524), roughness: 0.88, envMapIntensity: 0.3 });
     const cord = new THREE.MeshStandardMaterial({ color: O.srgb(0x4b5228), roughness: 1.0 });
 
-    const forearm = new THREE.Mesh(new THREE.CylinderGeometry(0.072, 0.10, 0.8, 14), skin);
-    forearm.position.set(0.15, -0.34, 0.22);
-    forearm.rotation.set(-0.62, 0.0, 0.42);
+    function capsule(r, len, seg) {
+      return THREE.CapsuleGeometry
+        ? new THREE.CapsuleGeometry(r, len, 4, seg || 10)
+        : new THREE.CylinderGeometry(r, r, len + r * 2, seg || 10);
+    }
+
+    const forearm = new THREE.Mesh(new THREE.CylinderGeometry(0.070, 0.100, 0.82, 16), skin);
+    forearm.position.set(0.16, -0.36, 0.24);
+    forearm.rotation.set(-0.60, 0.0, 0.44);
     hand.add(forearm);
 
-    const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.125, 0.13, 0.16, 12), sleeve);
-    cuff.position.set(0.26, -0.58, 0.36);
+    const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.118, 0.126, 0.15, 16), sleeve);
+    cuff.position.set(0.27, -0.60, 0.38);
     cuff.rotation.copy(forearm.rotation);
     hand.add(cuff);
 
-    const fist = new THREE.Mesh(new THREE.SphereGeometry(0.105, 18, 14), skin);
-    fist.scale.set(0.95, 0.86, 1.25);
-    fist.position.set(0.0, 0.0, 0.0);
-    hand.add(fist);
+    // Håndryggen: en flad, afrundet kasse i stedet for en kugle.
+    const palm = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.115, 0.20, 2, 2, 2), skin);
+    palm.position.set(0.0, -0.01, 0.02);
+    palm.rotation.set(0.12, 0.0, 0.10);
+    hand.add(palm);
 
-    const knuckles = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.065, 0.16), skin);
-    knuckles.position.set(-0.03, 0.06, -0.02);
-    knuckles.rotation.set(0.1, 0.0, 0.12);
-    hand.add(knuckles);
+    const palmEdge = new THREE.Mesh(new THREE.SphereGeometry(0.062, 14, 12), skin);
+    palmEdge.scale.set(1.0, 0.85, 1.5);
+    palmEdge.position.set(0.075, -0.03, 0.01);
+    hand.add(palmEdge);
 
-    const thumbGeo = THREE.CapsuleGeometry
-      ? new THREE.CapsuleGeometry(0.036, 0.09, 4, 8)
-      : new THREE.CylinderGeometry(0.038, 0.038, 0.15, 8);
-    const thumb = new THREE.Mesh(thumbGeo, skin);
-    thumb.position.set(-0.09, 0.05, -0.05);
-    thumb.rotation.set(0.35, 0, 1.0);
-    hand.add(thumb);
-
-    // Fingre der lukker om pinden.
-    const fingerGeo = THREE.CapsuleGeometry
-      ? new THREE.CapsuleGeometry(0.026, 0.12, 4, 10)
-      : new THREE.CylinderGeometry(0.034, 0.034, 0.19, 8);
+    // Fire fingre, hver med to led, bøjet omkring pinden.
+    const proxGeo = capsule(0.027, 0.075);
+    const distGeo = capsule(0.024, 0.055);
     for (let i = 0; i < 4; i++) {
-      const f = new THREE.Mesh(fingerGeo, skin);
-      f.position.set(-0.05, 0.068 - i * 0.048, -0.05 + i * 0.010);
-      f.rotation.set(0.0, 0.0, Math.PI / 2 - 0.12 - i * 0.05);
-      hand.add(f);
+      const z = -0.075 + i * 0.05;
+      const scale = 1.0 - Math.abs(i - 1.2) * 0.07;
+
+      const prox = new THREE.Mesh(proxGeo, skin);
+      prox.position.set(-0.055, 0.028, z);
+      prox.rotation.set(0.0, 0.0, Math.PI / 2 - 0.25);
+      prox.scale.setScalar(scale);
+      hand.add(prox);
+
+      const dist = new THREE.Mesh(distGeo, skin);
+      dist.position.set(-0.105, -0.028, z);
+      dist.rotation.set(0.0, 0.0, 0.35);
+      dist.scale.setScalar(scale);
+      hand.add(dist);
     }
 
-    // Pinden man går rundt med.
+    const thumb = new THREE.Mesh(capsule(0.030, 0.085), skin);
+    thumb.position.set(-0.035, 0.055, -0.10);
+    thumb.rotation.set(0.9, 0.0, 0.75);
+    hand.add(thumb);
+
+    // Pinden med en snoet læderomvikling.
     const stick = new THREE.Group();
-    const stickMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.062, 0.86, 10), wood);
-    stickMesh.position.y = 0.22;
+    const stickMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.050, 0.060, 0.90, 14), wood);
+    stickMesh.position.y = 0.24;
     stick.add(stickMesh);
-    const wrap = new THREE.Mesh(new THREE.CylinderGeometry(0.068, 0.068, 0.1, 10), cord);
-    wrap.position.y = -0.05;
-    stick.add(wrap);
-    stick.position.set(-0.01, 0.0, -0.02);
+    for (let i = 0; i < 4; i++) {
+      const wrap = new THREE.Mesh(new THREE.TorusGeometry(0.058, 0.011, 6, 14), cord);
+      wrap.position.y = -0.06 + i * 0.035;
+      wrap.rotation.set(Math.PI / 2, 0, i * 0.4);
+      stick.add(wrap);
+    }
+    stick.position.set(-0.02, 0.0, -0.01);
     stick.rotation.set(0.2, 0, -0.16);
     hand.add(stick);
 
@@ -178,6 +198,7 @@
     hand.scale.setScalar(0.54);
     hand.position.set(0.42, -0.33, -0.54);
     hand.rotation.set(0.05, -0.52, 0.14);
+    hand.traverse(function (o) { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; } });
     camera.add(hand);
 
     let holdTimer = 0;

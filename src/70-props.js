@@ -103,13 +103,13 @@
     group.add(detailGroup);
     const api = { group: group, detailGroup: detailGroup };
 
-    /* ================= Græs og buske ================= */
+    /* ================= Planter ================= */
     const tuftGeo = tuftGeometry();
 
-    function foliageMaterial(colorHex) {
+    function foliageMaterial(map, colorHex, alphaTest) {
       const mat = new THREE.MeshStandardMaterial({
-        map: tex.grass,
-        alphaTest: 0.34,
+        map: map,
+        alphaTest: alphaTest || 0.34,
         side: THREE.DoubleSide,
         roughness: 0.95,
         metalness: 0.0,
@@ -117,8 +117,8 @@
         color: O.srgb(colorHex),
         envMapIntensity: 0.4
       });
-      // Vind: hele totten vugger, spidserne mest, og vindstødene løber
-      // hen over landskabet i stedet for at ramme alt på samme tid.
+      // Vind: hele totten vugger, spidserne mest, og vindstødene løber hen
+      // over landskabet i stedet for at ramme alt på samme tid.
       mat.onBeforeCompile = function (shader) {
         shader.uniforms.uTime = timeUniform;
         shader.vertexShader = 'uniform float uTime;\n' + shader.vertexShader.replace(
@@ -139,16 +139,18 @@
       return mat;
     }
 
-    const grassMat = foliageMaterial(0xd6d6cc);
-    const bushMat = foliageMaterial(0x9fb083);
+    const plantKinds = [
+      { key: 'fresh', mat: foliageMaterial(tex.grassFresh, 0xd8d8cc), list: [], tint: [] },
+      { key: 'dry',   mat: foliageMaterial(tex.grassDry, 0xd6d0b8), list: [], tint: [] },
+      { key: 'broad', mat: foliageMaterial(tex.grassBroad, 0xc8d0bc), list: [], tint: [] },
+      { key: 'shrub', mat: foliageMaterial(tex.shrub, 0xc8bda6, 0.28), list: [], tint: [] }
+    ];
 
-    // Klyngevis udsåning: græs står i totter omkring nogle få centre,
-    // ikke jævnt fordelt som et tæppe.
-    const grassList = [];
-    const grassTint = [];
-    const bushList = [];
+    // Klyngevis udsåning: planter står i grupper, ikke jævnt fordelt.
+    // Hvilken art der gror hvor følger fugtigheden: friskt græs nede ved
+    // vandet, strå og buske længere oppe på den tørre bred.
     let clusters = 0, tries = 0;
-    while (clusters < 900 && tries < 60000) {
+    while (clusters < 1500 && tries < 90000) {
       tries++;
       const cx = (rnd() - 0.5) * 250;
       const cz = (rnd() - 0.5) * 290;
@@ -157,54 +159,61 @@
       if (rnd() > lush) continue;
       clusters++;
 
+      const wetness = 1 - M.smoothstep(0.05, 1.5, ch);
       const spread = 0.8 + rnd() * 3.4;
-      const n = 6 + (rnd() * 22 | 0);
+      const n = 8 + (rnd() * 26 | 0);
       for (let i = 0; i < n; i++) {
         const a = rnd() * 6.283;
         const d = Math.pow(rnd(), 0.7) * spread;
         const x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d;
         const h = O.world.height(x, z);
         if (h < -0.55 || h > 2.6) continue;
+
+        const roll = rnd();
+        let kind;
+        if (roll < wetness * 0.72) kind = plantKinds[0];            // friskt græs
+        else if (roll < 0.82) kind = plantKinds[1];                  // tørt strå
+        else kind = plantKinds[2];                                   // brede blade
+
         const reed = h < 0.12 && rnd() < 0.3;
         const wide = (reed ? 0.30 : 0.40) + rnd() * 0.40;
         const tall = reed ? 0.75 + rnd() * 0.7 : 0.22 + rnd() * 0.38;
-        grassList.push({
+        kind.list.push({
           x: x, y: h - 0.04, z: z, ry: rnd() * Math.PI,
           sx: wide, sy: tall, sz: wide * (0.8 + rnd() * 0.4)
         });
-        // Grønnest lige ved vandet, mere strågult længere oppe.
-        const green = 1 - M.smoothstep(0.1, 1.4, h);
-        grassTint.push(green);
+        kind.tint.push(1 - M.smoothstep(0.1, 1.4, h));
       }
 
-      // Enkelte større buske i klyngerne tættest på vandet.
-      if (ch < 0.9 && rnd() < 0.32) {
-        const bs = 0.75 + rnd() * 0.9;
-        bushList.push({
-          x: cx + (rnd() - 0.5) * 2, y: ch - 0.08, z: cz + (rnd() - 0.5) * 2,
-          ry: rnd() * Math.PI, sx: bs * 1.25, sy: bs, sz: bs * 1.25
+      // Buske: tørre kviste, oftest et stykke oppe fra vandkanten.
+      if (rnd() < 0.30 && ch > 0.15) {
+        const bs = 0.5 + rnd() * 0.85;
+        plantKinds[3].list.push({
+          x: cx + (rnd() - 0.5) * 3, y: ch - 0.06, z: cz + (rnd() - 0.5) * 3,
+          ry: rnd() * Math.PI, sx: bs * 1.3, sy: bs, sz: bs * 1.3
         });
+        plantKinds[3].tint.push(0);
       }
     }
 
-    const grass = instanced(tuftGeo, grassMat, grassList, true, true);
     const gc = new THREE.Color();
-    for (let i = 0; i < grassList.length; i++) {
-      const g = grassTint[i];
-      gc.setRGB(
-        M.lerp(1.10, 0.86, g) * (0.9 + rnd() * 0.2),
-        M.lerp(1.02, 1.02, g) * (0.9 + rnd() * 0.2),
-        M.lerp(0.80, 0.70, g) * (0.9 + rnd() * 0.2)
-      );
-      grass.setColorAt(i, gc);
+    for (const kind of plantKinds) {
+      if (!kind.list.length) continue;
+      const im = instanced(tuftGeo, kind.mat, kind.list, true, true);
+      for (let i = 0; i < kind.list.length; i++) {
+        const g = kind.tint[i];
+        gc.setRGB(
+          M.lerp(1.10, 0.86, g) * (0.9 + rnd() * 0.2),
+          M.lerp(1.02, 1.02, g) * (0.9 + rnd() * 0.2),
+          M.lerp(0.80, 0.70, g) * (0.9 + rnd() * 0.2)
+        );
+        im.setColorAt(i, gc);
+      }
+      if (im.instanceColor) im.instanceColor.needsUpdate = true;
+      im.frustumCulled = false;
+      group.add(im);
+      kind.mesh = im;
     }
-    if (grass.instanceColor) grass.instanceColor.needsUpdate = true;
-    grass.frustumCulled = false;
-    group.add(grass);
-
-    const bushes = instanced(tuftGeo, bushMat, bushList, true, true);
-    bushes.frustumCulled = false;
-    group.add(bushes);
 
     /* ================= Sten, nedfald og grus ================= */
     const rockMat = new THREE.MeshStandardMaterial({
@@ -410,8 +419,11 @@
       }
     };
 
-    api.counts = { grass: grassList.length, bushes: bushList.length,
-                   rocks: buckets.reduce((a, b) => a + b.length, 0), sticks: sticks.length };
+    api.counts = {
+      plants: plantKinds.reduce((a, k) => a + k.list.length, 0),
+      rocks: buckets.reduce((a, b) => a + b.length, 0),
+      sticks: sticks.length
+    };
     return api;
   };
 })();
