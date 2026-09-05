@@ -30,7 +30,14 @@
 
     // Grundtone: lys, varm sandfarve. Splat-laget lægger græs og klippe
     // ovenpå, så den her farve er mest til stranden og det nøgne.
-    let r = 1.00, g = 0.97, b = 0.92;
+    //
+    // Variationen i to skalaer er ikke pynt: uden den bliver en strand på
+    // hundrede meter én eneste flad khakifarve, fordi teksturen alligevel
+    // er mipmappet væk på afstand.
+    const patch = M.fbm(x * 0.013, z * 0.013, 3);
+    const fine = M.fbm(x * 0.075, z * 0.075, 3);
+    const v = 1.0 + patch * 0.22 + fine * 0.09;
+    let r = 1.00 * v, g = (0.97 + patch * 0.03) * v, b = (0.90 + patch * 0.06) * v;
 
     // Vådt sand langs vandkanten er mørkere.
     const wet = (1 - M.smoothstep(-0.05, 0.75, h - wl)) * M.smoothstep(-0.9, -0.05, h - wl);
@@ -42,9 +49,18 @@
     const bed = M.smoothstep(1.0, 5.0, wl - h);
     r = M.lerp(r, 0.42, bed); g = M.lerp(g, 0.48, bed); b = M.lerp(b, 0.44, bed);
 
+    // Inde på byens plateau er der ikke græsmark mellem husene. Jorden dér
+    // er slidt grus og støv — ellers ser vejen ud til at stoppe brat midt
+    // i en plæne, når man når byens kant.
+    const cm = O.world.cityMask(x, z);
+    if (cm > 0.01) {
+      const dust = cm * 0.85;
+      r = M.lerp(r, 0.74, dust); g = M.lerp(g, 0.73, dust); b = M.lerp(b, 0.70, dust);
+    }
+
     out.r = r; out.g = g; out.b = b;
-    out.grass = M.clamp(lush * (1 - sub), 0, 1);
-    out.rock = M.clamp(rock * (1 - beach * 0.6) * (1 - sub * 0.7), 0, 1);
+    out.grass = M.clamp(lush * (1 - sub) * (1 - cm * 0.92), 0, 1);
+    out.rock = M.clamp(rock * (1 - beach * 0.6) * (1 - sub * 0.7) * (1 - cm), 0, 1);
     out.wet = M.clamp(wet * 0.95 + sub * 0.5, 0, 1);
   }
 

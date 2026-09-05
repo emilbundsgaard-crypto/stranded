@@ -46,7 +46,10 @@
         if (o.isMesh || o.isSkinnedMesh) {
           o.castShadow = O.quality.get('grassShadows');
           o.material = o.material.clone();
-          o.material.color.copy(NAVY);
+          o.material.color.setRGB(
+            (0.42 + NAVY.r * 0.58) * 1.05,
+            (0.44 + NAVY.g * 0.56) * 1.05,
+            (0.52 + NAVY.b * 0.48) * 1.05);
           o.material.roughness = 0.8;
           o.material.metalness = 0.05;
         }
@@ -59,21 +62,24 @@
       if (run) { run.play(); run.setEffectiveWeight(0); }
       if (walk) { walk.play(); walk.setEffectiveWeight(0); }
 
-      // De kommer fra kanten af byen, ikke ud af den blå luft foran næsen.
+      // De kommer om hjørnet, ikke ud af den blå luft foran næsen — men de
+      // skal heller ikke starte så langt væk, at de aldrig når frem.
       const nodes = npcs.nodes;
-      let best = null, bestD = -Infinity;
+      let best = null, bestIdx = 0, bestD = Infinity;
       const p = hooks.playerPos();
-      for (let i = 0; i < 40; i++) {
-        const n = nodes[(Math.random() * nodes.length) | 0];
-        const d = Math.hypot(n.x - p.x, n.z - p.z);
-        if (d > 40 && d < 110 && d > bestD) { bestD = d; best = n; }
+      for (let i = 0; i < nodes.length; i++) {
+        const d = Math.hypot(nodes[i].x - p.x, nodes[i].z - p.z);
+        if (d > 26 && d < 75 && d < bestD && Math.random() < 0.5) {
+          bestD = d; best = nodes[i]; bestIdx = i;
+        }
       }
-      if (!best) best = nodes[(Math.random() * nodes.length) | 0];
+      if (!best) { bestIdx = (Math.random() * nodes.length) | 0; best = nodes[bestIdx]; }
 
       const u = {
         isCop: true,
         obj: clone, mixer: mixer, idle: idle, run: run, walk: walk,
         pos: new THREE.Vector3(best.x, BASE, best.z),
+        node: bestIdx, target: bestIdx,
         yaw: 0, speed: 0, health: 100, dead: false, deadTimer: 0,
         fire: 0.8 + Math.random() * 0.8
       };
@@ -120,7 +126,7 @@
 
         const want = wanted === 0 ? 0 : Math.min(10, wanted * 2);
         const alive = units.filter(function (u) { return !u.dead; }).length;
-        if (alive < want && Math.random() < dt * 0.9) spawn();
+        if (alive < want && Math.random() < dt * 2.6) spawn();
 
         for (let i = 0; i < units.length; i++) {
           const u = units[i];
@@ -137,21 +143,45 @@
 
           const dx = player.pos.x - u.pos.x, dz = player.pos.z - u.pos.z;
           const dist = Math.hypot(dx, dz);
-          const wantYaw = Math.atan2(dx, dz);
+
+          // De går langs fortovenes rutenet frem for i lige linje. En lige
+          // linje ender i en husmur, og så står betjenten og skubber på den
+          // resten af sit liv. Ved hvert punkt vælges den nabo, der ligger
+          // tættest på spilleren.
+          const nodes2 = npcs.nodes;
+          let wantYaw;
+          if (dist > 16) {
+            const tn = nodes2[u.target];
+            if (Math.hypot(tn.x - u.pos.x, tn.z - u.pos.z) < 1.6) {
+              u.node = u.target;
+              let bd = Infinity, bi = u.target;
+              const links = nodes2[u.node].links;
+              for (let k = 0; k < links.length; k++) {
+                const n2 = nodes2[links[k]];
+                const d2 = Math.hypot(n2.x - player.pos.x, n2.z - player.pos.z);
+                if (d2 < bd) { bd = d2; bi = links[k]; }
+              }
+              u.target = bi;
+            }
+            const t2 = nodes2[u.target];
+            wantYaw = Math.atan2(t2.x - u.pos.x, t2.z - u.pos.z);
+          } else {
+            wantYaw = Math.atan2(dx, dz);
+          }
+
           let dy = wantYaw - u.yaw;
           while (dy > Math.PI) dy -= Math.PI * 2;
           while (dy < -Math.PI) dy += Math.PI * 2;
           u.yaw += dy * Math.min(1, dt * 5);
 
           // Går frem, indtil de er på skudhold, og bliver så stående.
-          const wantSpeed = dist > 14 ? SPEED : (dist < 8 ? -1.2 : 0);
+          const wantSpeed = dist > 13 ? SPEED : (dist < 7 ? -1.2 : 0);
           u.speed += (wantSpeed - u.speed) * Math.min(1, dt * 3);
           if (Math.abs(u.speed) > 0.05) {
             const nx = u.pos.x + Math.sin(u.yaw) * u.speed * dt;
             const nz = u.pos.z + Math.cos(u.yaw) * u.speed * dt;
             if (!O.world.blocked(nx, nz)) { u.pos.x = nx; u.pos.z = nz; }
             else {
-              // Sidefod om hjørnet i stedet for at stå og skubbe på muren.
               const sx = u.pos.x + Math.cos(u.yaw) * u.speed * dt;
               const sz = u.pos.z - Math.sin(u.yaw) * u.speed * dt;
               if (!O.world.blocked(sx, sz)) { u.pos.x = sx; u.pos.z = sz; }

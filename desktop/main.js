@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------
-   Oasen som program til macOS.
+   Isla Verano som program til macOS.
 
    Det er den samme scene som i browseren, men uden fanens begrænsninger:
    den kører i sit eget vindue, henter ANGLE's Metal-backend, beder om det
@@ -28,8 +28,8 @@ function sceneFile() {
   // I udvikling ligger scenen ved siden af; i den pakkede app ligger den
   // under Resources. Vi prøver begge, så det virker i begge tilfælde.
   const candidates = [
-    path.join(__dirname, '..', 'dist', 'oasen.html'),
-    path.join(process.resourcesPath || '', 'dist', 'oasen.html')
+    path.join(__dirname, '..', 'dist', 'isla.html'),
+    path.join(process.resourcesPath || '', 'dist', 'isla.html')
   ];
   for (const c of candidates) {
     try { if (fs.existsSync(c)) return c; } catch (e) { /* prøv næste */ }
@@ -48,7 +48,7 @@ function createWindow() {
     minWidth: 900,
     minHeight: 560,
     backgroundColor: '#0b0a09',
-    title: 'Oasen',
+    title: 'Isla Verano',
     titleBarStyle: 'hiddenInset',
     show: false,
     webPreferences: {
@@ -82,10 +82,10 @@ function buildMenu() {
     {
       label: app.name,
       submenu: [
-        { role: 'about', label: 'Om Oasen' },
+        { role: 'about', label: 'Om Isla Verano' },
         { type: 'separator' },
-        { role: 'hide', label: 'Skjul Oasen' },
-        { role: 'quit', label: 'Afslut Oasen' }
+        { role: 'hide', label: 'Skjul Isla Verano' },
+        { role: 'quit', label: 'Afslut Isla Verano' }
       ]
     },
     {

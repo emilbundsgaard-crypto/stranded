@@ -55,7 +55,7 @@
     scene.add(camera);
 
     const timeUniform = { value: 0 };
-    let tex, sky, terrain, city, vehicles, water, props, player, audio, post, tracks, weapons, npcs, police;
+    let tex, sky, terrain, city, vehicles, water, props, player, audio, post, tracks, weapons, npcs, police, pickups;
 
     const steps = [
       ['Henter teksturer og modeller…', function (done) { O.assets.load(function () { done(); }); }],
@@ -136,6 +136,11 @@
           onDryFire: function () { audio.dryFire(); },
           onReload: function () { audio.reload(); },
           onSwitch: function (name) { audio.swap(); hud.toast(name); }
+        });
+      }],
+      ['Lægger kasser ud…', function () {
+        pickups = O.buildPickups(scene, npcs, {
+          onPickup: function (text) { hud.toast(text); audio.pickup(1); }
         });
       }],
       ['Varmer shaderne op…', function () {
@@ -291,6 +296,7 @@
         weapons.update(dt, t, player);
         npcs.update(dt, player.pos);
         police.update(dt, player);
+        pickups.update(dt, t, player, weapons);
         vehicles.update(dt, player.pos);
 
         // Sigtekornet giver et smallere synsfelt.
@@ -401,7 +407,7 @@
         frames: 0,
         scene: scene, camera: camera, renderer: renderer, player: player,
         water: water, sky: sky, props: props, post: post, tracks: tracks,
-        terrain: terrain, city: city, vehicles: vehicles, npcs: npcs, police: police,
+        terrain: terrain, city: city, vehicles: vehicles, npcs: npcs, police: police, pickups: pickups,
         weapons: weapons, hud: hud
       };
 

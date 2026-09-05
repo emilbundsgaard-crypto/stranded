@@ -98,16 +98,21 @@
     const guard = 200;
     for (let i = 0; i < wanted * 26 && spots.length < wanted; i++) {
       const a = rnd() * Math.PI * 2;
-      const r = 40 + rnd() * 230;
+      const r = 30 + rnd() * 240;
       const x = Math.cos(a) * r, z = Math.sin(a) * r * 1.05;
       const h = O.world.height(x, z);
       if (h < 0.9 || h > 26) continue;
       if (O.world.blocked(x, z)) continue;
-      // Ikke i kørebanen, og ikke inde i karreerne.
+      // Inde i byen står palmerne enten i fortovsbræmmen langs gaden eller
+      // ude i kanten af byen, hvor asfalten hører op. Uden dem i kanten
+      // stopper vejen brat i en græsmark, og byen ser afskåret ud.
       const cm = O.world.cityMask(x, z);
       if (cm > 0.5) {
-        if (O.world.roadDist(x, z) < C.roadHalf + C.walk * 0.6) continue;
-        if (O.world.roadDist(x, z) > C.roadHalf + C.walk * 1.6) continue;
+        const rd = O.world.roadDist(x, z);
+        const inBlock = O.world.inBlock(x, z);
+        const onWalk = inBlock && rd > C.roadHalf + C.walk * 0.55 && rd < C.roadHalf + C.walk * 1.5;
+        const margin = !inBlock && rd > C.roadHalf + 3.0;
+        if (!onWalk && !margin) continue;
       }
       // Palmer vil have kysten eller det fugtige.
       const beach = O.world.beachness(x, z, h);

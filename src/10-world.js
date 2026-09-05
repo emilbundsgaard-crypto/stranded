@@ -212,6 +212,13 @@
     height: height,
     surface: surface,
     setBlocks: function (b) { blockRects = b; },
+    inBlock: function (x, z) {
+      for (let i = 0; i < blockRects.length; i++) {
+        const b = blockRects[i];
+        if (x > b.x0 && x < b.x1 && z > b.z0 && z < b.z1) return true;
+      }
+      return false;
+    },
     waterDepth: waterDepth,
     beachness: beachness,
     rockiness: rockiness,

@@ -1,8 +1,8 @@
 {
-  "name": "oasen-desktop",
-  "productName": "Oasen",
+  "name": "isla-verano-desktop",
+  "productName": "Isla Verano",
   "version": "1.0.0",
-  "description": "Oasen som program til macOS — samme scene, hele grafikkortet.",
+  "description": "Isla Verano som program til macOS — samme spil, hele grafikkortet.",
   "main": "main.js",
   "scripts": {
     "start": "node ../tools/build.js && electron .",
@@ -15,12 +15,12 @@
     "electron-builder": "^24.13.3"
   },
   "build": {
-    "appId": "dk.oasen.app",
-    "productName": "Oasen",
+    "appId": "dk.islaverano.app",
+    "productName": "Isla Verano",
     "directories": { "output": "build" },
     "files": ["main.js", "package.json"],
     "extraResources": [
-      { "from": "../dist/oasen.html", "to": "dist/oasen.html" }
+      { "from": "../dist/isla.html", "to": "dist/isla.html" }
     ],
     "mac": {
       "category": "public.app-category.games",

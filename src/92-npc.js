@@ -96,7 +96,14 @@
           o.material = o.material.clone();
           // Modellen har én tekstur til hele figuren, så farven bliver en
           // tone over det hele. Det er nok til, at de ikke ligner kopier.
-          o.material.color.copy(tint);
+          // Tonen lægges oven på modellens egen tekstur. Fuld farve gør
+          // folk til farvede figurer; her blandes den kun halvvejs ind mod
+          // hvid, så teksturen stadig kan ses, og der bliver løftet lidt,
+          // så ingen ender som silhuet.
+          o.material.color.setRGB(
+            (0.55 + tint.r * 0.45) * 1.12,
+            (0.55 + tint.g * 0.45) * 1.12,
+            (0.55 + tint.b * 0.45) * 1.12);
           o.material.roughness = 0.85;
           o.material.metalness = 0.0;
           o.material.envMapIntensity = 0.6;

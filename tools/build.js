@@ -1,7 +1,7 @@
 /* Samler index.html + moduler + three.js til én fil, der kan åbnes
    direkte i browseren (og bruges som artefakt).
 
-   node tools/build.js              -> dist/oasen.html (komplet HTML-fil)
+   node tools/build.js              -> dist/isla.html (komplet HTML-fil)
    node tools/build.js --fragment X -> X (uden <html>/<head>/<body>, til Artifacts)
 */
 const fs = require('fs');

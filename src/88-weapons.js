@@ -294,18 +294,20 @@
       // Mundingsblinket sidder i våbnets eget koordinatsystem.
       const flash = new THREE.Group();
       flash.position.copy(p.muzzle);
+      // Blinket sidder en håndsbred fra kameraet, så det fylder meget mere
+      // på skærmen, end målene antyder. Det er derfor det er så småt her.
       const fmat = new THREE.MeshBasicMaterial({
-        color: 0xffd9a0, transparent: true, opacity: 0.95,
+        color: 0xffc271, transparent: true, opacity: 0.62,
         blending: THREE.AdditiveBlending, depthWrite: false
       });
-      const star = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.34), fmat);
+      const star = new THREE.Mesh(new THREE.PlaneGeometry(0.115, 0.115), fmat);
       flash.add(star);
-      const star2 = new THREE.Mesh(new THREE.PlaneGeometry(0.30, 0.30), fmat);
+      const star2 = new THREE.Mesh(new THREE.PlaneGeometry(0.085, 0.085), fmat);
       star2.rotation.z = Math.PI / 4;
       flash.add(star2);
-      const cone = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.20, 8), fmat);
+      const cone = new THREE.Mesh(new THREE.ConeGeometry(0.020, 0.085, 8), fmat);
       cone.rotation.x = -Math.PI / 2;
-      cone.position.z = -0.10;
+      cone.position.z = -0.045;
       flash.add(cone);
       flash.visible = false;
       g.add(flash);
@@ -516,7 +518,7 @@
       const mo = model();
       mo.flash.visible = true;
       mo.flash.rotation.z = Math.random() * 6.28;
-      mo.flash.scale.setScalar(0.75 + Math.random() * 0.5);
+      mo.flash.scale.setScalar((0.8 + Math.random() * 0.45) * (sp.pellets > 4 ? 1.5 : 1.0));
       state.flashTimer = 0.045;
       _tmp.copy(mo.parts.muzzle);
       mo.group.localToWorld(_tmp);

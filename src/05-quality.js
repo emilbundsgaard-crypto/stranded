@@ -76,7 +76,7 @@
     if (window.OASIS_DESKTOP) return 'kino';
 
     try {
-      const saved = localStorage.getItem('oasen.quality');
+      const saved = localStorage.getItem('isla.quality');
       if (saved && PRESETS[saved]) return saved;
     } catch (e) { /* privat browser-tilstand */ }
 
@@ -99,7 +99,7 @@
 
     set: function (name) {
       if (!PRESETS[name]) return;
-      try { localStorage.setItem('oasen.quality', name); } catch (e) { /* ignoreres */ }
+      try { localStorage.setItem('isla.quality', name); } catch (e) { /* ignoreres */ }
       // Flere af indstillingerne (terrænets tæthed, antal planter) afgøres når
       // verdenen bygges, så et skift genindlæser scenen. Det er ærligere end
       // at lade som om alt kan skiftes i farten.

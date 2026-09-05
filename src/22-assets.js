@@ -39,11 +39,22 @@
       keys.forEach(function (k) {
         const uri = DATA[k];
         if (uri.indexOf('data:model/gltf-binary') === 0) {
-          // Modellerne ligger som data-URI'er ligesom billederne. Fejler en
-          // af dem, kører spillet videre uden den i stedet for at hænge.
+          // Modellen afkodes i hånden og sendes til parse() i stedet for
+          // load(). load() ville hente data-URI'en med fetch, og en
+          // artefaktside har en indholdspolitik, der kan spærre for netop
+          // det — parse() rører ikke netværket overhovedet.
           if (!gltfLoader) { done(); return; }
-          gltfLoader.load(uri, function (gltf) { models[k] = gltf; done(); },
-                          undefined, function () { done(); });
+          try {
+            const b64 = uri.slice(uri.indexOf(',') + 1);
+            const bin = atob(b64);
+            const buf = new ArrayBuffer(bin.length);
+            const view = new Uint8Array(buf);
+            for (let i = 0; i < bin.length; i++) view[i] = bin.charCodeAt(i);
+            gltfLoader.parse(buf, '', function (gltf) { models[k] = gltf; done(); },
+                             function () { done(); });
+          } catch (e) {
+            done();
+          }
           return;
         }
         texLoader.load(uri, function (tex) {
