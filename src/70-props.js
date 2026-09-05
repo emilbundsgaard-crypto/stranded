@@ -1,512 +1,292 @@
 /* ------------------------------------------------------------------
-   Alt det små, der gør landskabet troværdigt: græs i klynger, buske,
-   nedfaldsklippe ved kløftens fod, småsten og grus i sandet, drivtømmer,
-   bål og støv i luften.
+   Øens bevoksning og strandens ting.
 
-   Alt tegnes med instanser — hver gruppe koster ét kald, uanset om der
-   er hundrede eller tyve tusind af dem.
+   Palmer langs promenaden og på stranden, tuer af strandgræs i det
+   fugtige bånd, sten på skrænterne og en badebro ud i vandet.
+
+   Palmen bygges som ét net pr. variant — stamme og blade i samme
+   geometri — og sættes ud med instansering. Det er dét, der gør, at der
+   kan stå to hundrede af dem uden at koste to hundrede tegnekald.
    ------------------------------------------------------------------ */
 (function () {
   const O = window.OASIS;
   const M = O.math;
+  const BGU = THREE.BufferGeometryUtils;
 
-  function mergeNonIndexed(geos) {
-    const parts = geos.map(g => (g.index ? g.toNonIndexed() : g));
-    let n = 0;
-    for (const g of parts) n += g.attributes.position.count;
-    const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), uv = new Float32Array(n * 2);
-    let o = 0;
-    for (const g of parts) {
-      pos.set(g.attributes.position.array, o * 3);
-      nor.set(g.attributes.normal.array, o * 3);
-      uv.set(g.attributes.uv.array, o * 2);
-      o += g.attributes.position.count;
+  function palmVariant(rnd, tall) {
+    const parts = [];
+    const H = tall ? 9.5 + rnd() * 4 : 5.5 + rnd() * 2.5;
+    const seg = 7;
+    // Stammen krummer: palmer står sjældent lodret.
+    const bendX = (rnd() - 0.5) * 0.30;
+    const bendZ = (rnd() - 0.5) * 0.30;
+    let px = 0, pz = 0;
+    for (let i = 0; i < seg; i++) {
+      const t0 = i / seg, t1 = (i + 1) / seg;
+      const r0 = M.lerp(0.28, 0.15, t0), r1 = M.lerp(0.28, 0.15, t1);
+      const g = new THREE.CylinderGeometry(r1, r0, H / seg, 9, 1, true);
+      const y = H * (t0 + t1) * 0.5;
+      const nx = bendX * H * t0 * t0, nz = bendZ * H * t0 * t0;
+      g.translate(nx, y, nz);
+      // Barken er ringet — teksturen strækkes over hele stammen.
+      const uv = g.attributes.uv;
+      for (let k = 0; k < uv.count; k++) uv.setY(k, M.lerp(t0, t1, uv.getY(k)) * 4);
+      parts.push(g);
+      px = nx; pz = nz;
     }
-    const out = new THREE.BufferGeometry();
-    out.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-    out.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
-    out.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-    return out;
-  }
+    const trunk = BGU.mergeBufferGeometries(parts);
 
-  // Et enkelt græsstrå: en buet, spids strimmel med bredden aftagende opad.
-  // Rigtige strimler i stedet for krydsende billeder er den enkeltting, der
-  // fjerner "flade papklip"-udseendet — hvert strå fanger lyset for sig.
-  function bladeGeometry(segments) {
-    const pos = [], uv = [], col = [], idx = [];
-    for (let i = 0; i <= segments; i++) {
-      const t = i / segments;
-      const y = t;
-      const w = 0.016 * (1 - t * t * 0.92);        // spidser til
-      const bend = t * t * 0.26;                   // bøjer fremad
-      pos.push(-w, y, bend, w, y, bend);
-      uv.push(0, t, 1, t);
-      // Mørk ved roden, lys i spidsen — sådan ser en græstot ud i sollys.
-      const shade = 0.40 + t * 0.85;
-      col.push(shade, shade * 1.02, shade * 0.86, shade, shade * 1.02, shade * 0.86);
+    // Kronen: otte blade i en krans, med fald udad.
+    const fronds = [];
+    const n = 8 + ((rnd() * 4) | 0);
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + rnd() * 0.3;
+      const droop = 0.35 + rnd() * 0.55;
+      const len = 2.6 + rnd() * 1.4;
+      const g = new THREE.PlaneGeometry(len, len * 0.5, 3, 1);
+      // Bladet bøjer nedad ude i spidsen.
+      const p = g.attributes.position;
+      for (let k = 0; k < p.count; k++) {
+        const t = (p.getX(k) + len / 2) / len;
+        p.setY(k, p.getY(k) * (1 - t * 0.35));
+        p.setZ(k, -t * t * len * droop * 0.55);
+      }
+      g.rotateY(-Math.PI / 2);
+      g.rotateX(-0.25 - rnd() * 0.2);
+      g.translate(len * 0.5, 0, 0);
+      g.rotateY(a);
+      g.translate(px, H + 0.1, pz);
+      fronds.push(g);
     }
-    for (let i = 0; i < segments; i++) {
-      const a = i * 2, b = i * 2 + 1, c = i * 2 + 2, d = i * 2 + 3;
-      idx.push(a, c, b, b, c, d);
+    // Et par kokosnødder.
+    const coco = [];
+    if (rnd() < 0.6) {
+      for (let i = 0; i < 3; i++) {
+        const g = new THREE.SphereGeometry(0.11, 6, 5);
+        g.translate(px + (rnd() - 0.5) * 0.4, H - 0.15, pz + (rnd() - 0.5) * 0.4);
+        coco.push(g);
+      }
     }
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-    g.setIndex(idx);
-    g.computeVertexNormals();
-    // Normalerne trækkes mod lodret, så lyset over tottene bliver blødt
-    // i stedet for at hvert strå blinker sort og hvidt.
-    const n = g.attributes.normal.array;
-    for (let i = 0; i < n.length; i += 3) {
-      const x = n[i] * 0.55, y = n[i + 1] * 0.55 + 0.8, z = n[i + 2] * 0.55;
-      const l = Math.hypot(x, y, z);
-      n[i] = x / l; n[i + 1] = y / l; n[i + 2] = z / l;
-    }
-    return g;
-  }
-
-  // Tre krydsende plader. Normalerne peger overvejende opad (blødt løvlys),
-  // og vertexfarven gør bunden mørk og spidsen lys — en billig, men
-  // overbevisende erstatning for gennemlyst løv.
-  function tuftGeometry() {
-    const quads = [];
-    for (let i = 0; i < 3; i++) {
-      const q = new THREE.PlaneGeometry(1, 1, 1, 2).translate(0, 0.5, 0);
-      q.rotateY((i / 3) * Math.PI);
-      quads.push(q);
-    }
-    const g = mergeNonIndexed(quads);
-    const n = g.attributes.normal.array;
-    const p = g.attributes.position.array;
-    const col = new Float32Array(p.length);
-    for (let i = 0; i < n.length; i += 3) {
-      const x = n[i] * 0.4, y = 1.0, z = n[i + 2] * 0.4;
-      const l = Math.hypot(x, y, z);
-      n[i] = x / l; n[i + 1] = y / l; n[i + 2] = z / l;
-      const t = M.clamp(p[i + 1], 0, 1);
-      const shade = 0.5 + t * 0.75;
-      col[i] = shade; col[i + 1] = shade; col[i + 2] = shade * 0.97;
-    }
-    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    return g;
-  }
-
-  function deformedRock(rnd, detail) {
-    const g = new THREE.IcosahedronGeometry(1, detail === undefined ? 1 : detail);
-    const p = g.attributes.position;
-    const v = new THREE.Vector3();
-    const seed = rnd() * 40;
-    for (let i = 0; i < p.count; i++) {
-      v.fromBufferAttribute(p, i);
-      const n = M.fbm(v.x * 1.7 + seed, v.z * 1.7 + v.y * 1.1 + seed, 3);
-      const n2 = M.fbm(v.x * 4.3 + seed, v.z * 4.3 - v.y * 2.2, 2);
-      v.multiplyScalar(1 + n * 0.36 + n2 * 0.12);
-      v.y *= 0.72 + rnd() * 0.22;
-      p.setXYZ(i, v.x, v.y, v.z);
-    }
-    g.computeVertexNormals();
-    const white = new Float32Array(g.attributes.position.count * 3).fill(1);
-    g.setAttribute('color', new THREE.BufferAttribute(white, 3));
-    return g;
-  }
-
-  // Hjælper: byg en instans-samling ud fra en liste af transformationer.
-  function instanced(geo, mat, list, cast, receive) {
-    const im = new THREE.InstancedMesh(geo, mat, Math.max(1, list.length));
-    const d = new THREE.Object3D();
-    for (let i = 0; i < list.length; i++) {
-      const t = list[i];
-      d.position.set(t.x, t.y, t.z);
-      d.rotation.set(t.rx || 0, t.ry || 0, t.rz || 0);
-      d.scale.set(t.sx, t.sy, t.sz);
-      d.updateMatrix();
-      im.setMatrixAt(i, d.matrix);
-    }
-    im.count = list.length;
-    im.instanceMatrix.needsUpdate = true;
-    im.castShadow = !!cast;
-    im.receiveShadow = receive !== false;
-    return im;
+    return {
+      trunk: coco.length ? BGU.mergeBufferGeometries([trunk].concat(coco)) : trunk,
+      fronds: BGU.mergeBufferGeometries(fronds),
+      h: H
+    };
   }
 
   O.buildProps = function (scene, tex, timeUniform) {
-    const rnd = M.mulberry32(O.config.seed + 1337);
+    const rnd = M.mulberry32(O.config.seed ^ 0x71ce);
     const group = new THREE.Group();
+    group.name = 'props';
     scene.add(group);
-    // Det mindste pynt tegnes ikke med i vandets spejling og brydning —
-    // man ser det alligevel ikke, og det er tre gange så dyrt.
-    const detailGroup = new THREE.Group();
-    group.add(detailGroup);
-    const api = { group: group, detailGroup: detailGroup };
 
-    /* ================= Planter ================= */
-    const tuftGeo = tuftGeometry();
+    const barkMat = new THREE.MeshStandardMaterial({
+      map: tex.palmBark, color: new THREE.Color(0.55, 0.52, 0.48),
+      roughness: 0.95, metalness: 0, envMapIntensity: 0.5,
+      side: THREE.DoubleSide
+    });
+    const frondMat = new THREE.MeshStandardMaterial({
+      map: tex.palmFrond, color: new THREE.Color(0.75, 0.85, 0.60),
+      roughness: 0.85, metalness: 0, envMapIntensity: 0.7,
+      transparent: true, alphaTest: 0.4, side: THREE.DoubleSide
+    });
 
-    function foliageMaterial(map, colorHex, alphaTest) {
-      const mat = new THREE.MeshStandardMaterial({
-        map: map,
-        alphaTest: alphaTest || 0.34,
-        side: THREE.DoubleSide,
-        roughness: 0.95,
-        metalness: 0.0,
-        vertexColors: true,
-        color: O.srgb(colorHex),
-        envMapIntensity: 0.4
-      });
-      // Vind: hele totten vugger, spidserne mest, og vindstødene løber hen
-      // over landskabet i stedet for at ramme alt på samme tid.
-      mat.onBeforeCompile = function (shader) {
-        shader.uniforms.uTime = timeUniform;
-        shader.vertexShader = 'uniform float uTime;\n' + shader.vertexShader.replace(
-          '#include <begin_vertex>',
-          `#include <begin_vertex>
-           vec3 iOrigin = instanceMatrix[3].xyz;
-           float wave = sin(uTime * 0.55 - iOrigin.x * 0.055 - iOrigin.z * 0.04);
-           float gust = 0.45 + 0.55 * wave * wave;
-           float phase = iOrigin.x * 0.33 + iOrigin.z * 0.27;
-           float sway = sin(uTime * 1.7 + phase) * 0.09 + sin(uTime * 3.3 + phase * 1.9) * 0.035;
-           float infl = clamp(position.y, 0.0, 1.0); infl *= infl;
-           transformed.x += sway * gust * infl;
-           transformed.z += sway * gust * infl * 0.5;
-           transformed.y -= abs(sway) * gust * infl * 0.25;`
-        );
-      };
-      mat.customProgramCacheKey = function () { return 'foliage'; };
-      return mat;
+    /* ---------- Hvor kan der stå en palme? ---------- */
+    const spots = [];
+    const wanted = O.quality.get('palms');
+    const C = O.config.city;
+    const guard = 200;
+    for (let i = 0; i < wanted * 26 && spots.length < wanted; i++) {
+      const a = rnd() * Math.PI * 2;
+      const r = 40 + rnd() * 230;
+      const x = Math.cos(a) * r, z = Math.sin(a) * r * 1.05;
+      const h = O.world.height(x, z);
+      if (h < 0.9 || h > 26) continue;
+      if (O.world.blocked(x, z)) continue;
+      // Ikke i kørebanen, og ikke inde i karreerne.
+      const cm = O.world.cityMask(x, z);
+      if (cm > 0.5) {
+        if (O.world.roadDist(x, z) < C.roadHalf + C.walk * 0.6) continue;
+        if (O.world.roadDist(x, z) > C.roadHalf + C.walk * 1.6) continue;
+      }
+      // Palmer vil have kysten eller det fugtige.
+      const beach = O.world.beachness(x, z, h);
+      const lush = O.world.lushness(x, z, h);
+      if (cm < 0.5 && beach < 0.25 && lush < 0.3) continue;
+      spots.push({ x: x, z: z, y: h, s: 0.8 + rnd() * 0.5, r: rnd() * 6.28 });
     }
 
-    function bladeMaterial(colorHex) {
-      const mat = new THREE.MeshStandardMaterial({
-        color: O.srgb(colorHex), roughness: 0.88, metalness: 0.0,
-        vertexColors: true, side: THREE.DoubleSide, envMapIntensity: 0.35
-      });
-      mat.onBeforeCompile = function (shader) {
-        shader.uniforms.uTime = timeUniform;
-        shader.vertexShader = 'uniform float uTime;\n' + shader.vertexShader.replace(
-          '#include <begin_vertex>',
-          `#include <begin_vertex>
-           vec3 iOrigin = instanceMatrix[3].xyz;
-           float wave = sin(uTime * 0.55 - iOrigin.x * 0.055 - iOrigin.z * 0.04);
-           float gust = 0.45 + 0.55 * wave * wave;
-           float phase = iOrigin.x * 0.33 + iOrigin.z * 0.27;
-           float sway = sin(uTime * 1.9 + phase) * 0.13 + sin(uTime * 3.7 + phase * 1.9) * 0.05;
-           float infl = clamp(position.y, 0.0, 1.0); infl *= infl;
-           transformed.x += sway * gust * infl;
-           transformed.z += sway * gust * infl * 0.6;`
-        );
-      };
-      mat.customProgramCacheKey = function () { return 'blade'; };
-      return mat;
+    const VARIANTS = 5;
+    const variants = [];
+    for (let i = 0; i < VARIANTS; i++) variants.push(palmVariant(rnd, i % 2 === 0));
+
+    const dummy = new THREE.Object3D();
+    const perVariant = Math.ceil(spots.length / VARIANTS);
+    const palmMeshes = [];
+    for (let v = 0; v < VARIANTS; v++) {
+      const list = spots.filter(function (_, i) { return i % VARIANTS === v; });
+      if (!list.length) continue;
+      const tm = new THREE.InstancedMesh(variants[v].trunk, barkMat, list.length);
+      const fm = new THREE.InstancedMesh(variants[v].fronds, frondMat, list.length);
+      for (let i = 0; i < list.length; i++) {
+        const s = list[i];
+        dummy.position.set(s.x, s.y, s.z);
+        dummy.rotation.set(0, s.r, 0);
+        dummy.scale.setScalar(s.s);
+        dummy.updateMatrix();
+        tm.setMatrixAt(i, dummy.matrix);
+        fm.setMatrixAt(i, dummy.matrix);
+        O.world.addCircle(s.x, s.z, 0.45, s.y + variants[v].h * s.s);
+      }
+      tm.castShadow = true; tm.receiveShadow = true;
+      fm.castShadow = O.quality.get('grassShadows');
+      tm.instanceMatrix.needsUpdate = true;
+      fm.instanceMatrix.needsUpdate = true;
+      group.add(tm); group.add(fm);
+      palmMeshes.push(tm, fm);
     }
 
-    const bladeGeo = bladeGeometry(4);
-
-    const plantKinds = [
-      { key: 'fresh', blade: true, mat: bladeMaterial(0x9fb257), list: [], tint: [] },
-      { key: 'dry',   blade: true, mat: bladeMaterial(0xbfae6a), list: [], tint: [] },
-      { key: 'broad', mat: foliageMaterial(tex.grassBroad, 0xc8d0bc), list: [], tint: [] },
-      { key: 'shrub', mat: foliageMaterial(tex.shrub, 0xc8bda6, 0.28), list: [], tint: [] }
-    ];
-
-    // Klyngevis udsåning: planter står i grupper, ikke jævnt fordelt.
-    // Hvilken art der gror hvor følger fugtigheden: friskt græs nede ved
-    // vandet, strå og buske længere oppe på den tørre bred.
-    let clusters = 0, tries = 0;
-    const PLANT_CLUSTERS = O.quality.get('plants');
-    const bladesPerCluster = O.quality.get('bladesPerCluster') || 10;
-    while (clusters < PLANT_CLUSTERS && tries < PLANT_CLUSTERS * 60) {
-      tries++;
-      const cx = (rnd() - 0.5) * 250;
-      const cz = (rnd() - 0.5) * 290;
-      const ch = O.world.height(cx, cz);
-      const lush = O.world.lushness(cx, cz, ch);
-      if (rnd() > lush) continue;
-      // Hold afstand til vraget — ellers står det i en sivskov.
-      if (O.wreckSpot && Math.hypot(cx - O.wreckSpot.x, cz - O.wreckSpot.z) < O.wreckSpot.r) continue;
-      clusters++;
-
-      const wetness = 1 - M.smoothstep(0.05, 1.5, ch);
-      // Stråene står tæt i totter — spreder man dem ud, ligner det spredte
-      // pinde i stedet for græs.
-      const spread = 0.30 + rnd() * 0.85;
-      const n = bladesPerCluster + (rnd() * bladesPerCluster * 0.8 | 0);
-      for (let i = 0; i < n; i++) {
-        const a = rnd() * 6.283;
-        const d = Math.pow(rnd(), 0.45) * spread;
-        const x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d;
-        const h = O.world.height(x, z);
-        if (h < -0.55 || h > 2.6) continue;
-
-        const roll = rnd();
-        const kind = roll < wetness * 0.75 ? plantKinds[0]
-                   : roll < 0.94 ? plantKinds[1]
-                   : plantKinds[2];
-
-        if (kind.blade) {
-          const reed = h < 0.14 && rnd() < 0.3;
-          const tall = reed ? 0.85 + rnd() * 0.9 : 0.20 + rnd() * 0.38;
-          kind.list.push({
-            x: x, y: h - 0.015, z: z,
-            rx: (rnd() - 0.5) * 0.5, ry: rnd() * 6.283, rz: (rnd() - 0.5) * 0.5,
-            sx: 0.75 + rnd() * 0.6, sy: tall, sz: 0.75 + rnd() * 0.6
-          });
-        } else {
-          const wide = 0.36 + rnd() * 0.36;
-          kind.list.push({
-            x: x, y: h - 0.04, z: z, ry: rnd() * Math.PI,
-            sx: wide, sy: 0.22 + rnd() * 0.3, sz: wide * (0.8 + rnd() * 0.4)
-          });
+    /* ---------- Strandgræs ---------- */
+    const tuftGeo = (function () {
+      const parts = [];
+      const blades = Math.max(4, O.quality.get('bladesPerCluster') | 0);
+      for (let i = 0; i < blades; i++) {
+        const a = (i / blades) * Math.PI * 2 + Math.random();
+        const h = 0.35 + Math.random() * 0.55;
+        const g = new THREE.PlaneGeometry(0.10, h, 1, 3);
+        const p = g.attributes.position;
+        for (let k = 0; k < p.count; k++) {
+          const t = (p.getY(k) + h / 2) / h;
+          p.setZ(k, t * t * 0.22);
         }
-        kind.tint.push(1 - M.smoothstep(0.1, 1.4, h));
+        g.translate(0, h / 2, 0);
+        g.rotateY(a);
+        g.translate(Math.cos(a) * 0.09, 0, Math.sin(a) * 0.09);
+        parts.push(g);
       }
+      return BGU.mergeBufferGeometries(parts);
+    })();
 
-      // Buske: tørre kviste, oftest et stykke oppe fra vandkanten.
-      if (rnd() < 0.30 && ch > 0.15) {
-        const bs = 0.5 + rnd() * 0.85;
-        plantKinds[3].list.push({
-          x: cx + (rnd() - 0.5) * 3, y: ch - 0.06, z: cz + (rnd() - 0.5) * 3,
-          ry: rnd() * Math.PI, sx: bs * 1.3, sy: bs, sz: bs * 1.3
-        });
-        plantKinds[3].tint.push(0);
+    const tuftMat = new THREE.MeshStandardMaterial({
+      map: tex.grassDry, color: new THREE.Color(0.8, 0.85, 0.55),
+      roughness: 0.95, metalness: 0, transparent: true, alphaTest: 0.42,
+      side: THREE.DoubleSide, envMapIntensity: 0.7
+    });
+
+    const tuftSpots = [];
+    const tuftWanted = O.quality.get('plants');
+    for (let i = 0; i < tuftWanted * 12 && tuftSpots.length < tuftWanted; i++) {
+      const a = rnd() * Math.PI * 2;
+      const r = 60 + rnd() * 210;
+      const x = Math.cos(a) * r, z = Math.sin(a) * r * 1.05;
+      const h = O.world.height(x, z);
+      if (h < 0.3 || h > 14) continue;
+      if (O.world.cityMask(x, z) > 0.35) continue;
+      const lush = O.world.lushness(x, z, h);
+      const beach = O.world.beachness(x, z, h);
+      if (lush < 0.25 && beach < 0.5) continue;
+      tuftSpots.push({ x: x, y: h, z: z, s: 0.7 + rnd() * 0.8, r: rnd() * 6.28 });
+    }
+    if (tuftSpots.length) {
+      const tufts = new THREE.InstancedMesh(tuftGeo, tuftMat, tuftSpots.length);
+      for (let i = 0; i < tuftSpots.length; i++) {
+        const s = tuftSpots[i];
+        dummy.position.set(s.x, s.y - 0.05, s.z);
+        dummy.rotation.set(0, s.r, 0);
+        dummy.scale.set(s.s, s.s * (0.8 + rnd() * 0.5), s.s);
+        dummy.updateMatrix();
+        tufts.setMatrixAt(i, dummy.matrix);
       }
+      tufts.castShadow = O.quality.get('grassShadows');
+      tufts.instanceMatrix.needsUpdate = true;
+      group.add(tufts);
     }
 
-    const gc = new THREE.Color();
-    for (const kind of plantKinds) {
-      if (!kind.list.length) continue;
-      const im = instanced(kind.blade ? bladeGeo : tuftGeo, kind.mat, kind.list,
-                           O.quality.get('grassShadows') && !kind.blade, true);
-      for (let i = 0; i < kind.list.length; i++) {
-        const g = kind.tint[i];
-        gc.setRGB(
-          M.lerp(1.10, 0.86, g) * (0.9 + rnd() * 0.2),
-          M.lerp(1.02, 1.02, g) * (0.9 + rnd() * 0.2),
-          M.lerp(0.80, 0.70, g) * (0.9 + rnd() * 0.2)
-        );
-        im.setColorAt(i, gc);
+    /* ---------- Sten på skrænterne ---------- */
+    const rockGeo = (function () {
+      const g = new THREE.IcosahedronGeometry(1, 1);
+      const p = g.attributes.position;
+      for (let i = 0; i < p.count; i++) {
+        const s = 0.75 + M.fbm(p.getX(i) * 2.2, p.getZ(i) * 2.2 + p.getY(i), 3) * 0.55;
+        p.setXYZ(i, p.getX(i) * s, p.getY(i) * s * 0.7, p.getZ(i) * s);
       }
-      if (im.instanceColor) im.instanceColor.needsUpdate = true;
-      im.frustumCulled = false;
-      group.add(im);
-      kind.mesh = im;
-    }
-
-    /* ================= Sten, nedfald og grus ================= */
+      g.computeVertexNormals();
+      return g;
+    })();
     const AR = O.config.albedo.rock;
     const rockMat = new THREE.MeshStandardMaterial({
-      // Samme albedo-rettelse som terrænet, bare for sten (se O.config.albedo).
-      color: new THREE.Color(AR.r, AR.g, AR.b),
-      map: tex.stone,
-      normalMap: tex.rockDetail || tex.stoneNormal,
+      map: tex.stone, normalMap: tex.rockDetail || tex.stoneNormal,
       normalScale: new THREE.Vector2(1.2, 1.2),
-      roughness: 0.93,
-      metalness: 0.0,
-      vertexColors: true,
-      envMapIntensity: 0.5
+      color: new THREE.Color(AR.r, AR.g, AR.b),
+      roughness: 0.94, metalness: 0, envMapIntensity: 0.55
     });
-
-    // Grusstenene får samme detaljegrad som de øvrige: en kegle med otte
-    // flader ligner ikke en sten, når man står med næsen i den.
-    const variants = [deformedRock(rnd, 1), deformedRock(rnd, 1), deformedRock(rnd, 1), deformedRock(rnd, 1)];
-    const buckets = [[], [], [], []];
-
-    // 1) Nedfaldsklippe ved kløftens fod — skjuler den hårde linje hvor
-    //    klippe møder sand, og er dét, der får foden til at se ægte ud.
-    for (const p of (O.screePoints || [])) {
-      const n = M.clamp(p.r * 1.6, 14, 52) | 0;
-      for (let i = 0; i < n; i++) {
-        const a = rnd() * 6.283;
-        const rr = p.r * (0.86 + Math.pow(rnd(), 1.7) * 0.55);
-        const x = p.x + Math.cos(a) * rr, z = p.z + Math.sin(a) * rr;
-        const h = O.world.height(x, z);
-        if (h < -0.6) continue;
-        const s = 0.18 + Math.pow(rnd(), 2.4) * 1.35;
-        buckets[(rnd() * 4) | 0].push({
-          x: x, y: h - s * 0.3, z: z,
-          rx: (rnd() - 0.5) * 0.7, ry: rnd() * 6.283, rz: (rnd() - 0.5) * 0.7,
-          sx: s * (0.8 + rnd() * 0.6), sy: s * (0.7 + rnd() * 0.5), sz: s * (0.8 + rnd() * 0.6)
-        });
+    const rockSpots = [];
+    const rockWanted = Math.round(O.quality.get('gravel') * 0.25);
+    for (let i = 0; i < rockWanted * 14 && rockSpots.length < rockWanted; i++) {
+      const a = rnd() * Math.PI * 2;
+      const r = 90 + rnd() * 200;
+      const x = Math.cos(a) * r, z = Math.sin(a) * r * 1.05;
+      const h = O.world.height(x, z);
+      if (h < -1.5 || h > 46) continue;
+      if (O.world.cityMask(x, z) > 0.3) continue;
+      if (O.world.rockiness(x, z, h) < 0.25 && rnd() < 0.7) continue;
+      rockSpots.push({ x: x, y: h, z: z, s: 0.4 + rnd() * 2.6, r: rnd() * 6.28 });
+    }
+    if (rockSpots.length) {
+      const rocks = new THREE.InstancedMesh(rockGeo, rockMat, rockSpots.length);
+      for (let i = 0; i < rockSpots.length; i++) {
+        const s = rockSpots[i];
+        dummy.position.set(s.x, s.y - s.s * 0.25, s.z);
+        dummy.rotation.set(rnd() * 0.4, s.r, rnd() * 0.4);
+        dummy.scale.setScalar(s.s);
+        dummy.updateMatrix();
+        rocks.setMatrixAt(i, dummy.matrix);
+        if (s.s > 1.2) O.world.addCircle(s.x, s.z, s.s * 0.7, s.y + s.s);
       }
+      rocks.castShadow = true; rocks.receiveShadow = true;
+      rocks.instanceMatrix.needsUpdate = true;
+      group.add(rocks);
     }
 
-    // 2) Løse kampesten spredt i landskabet.
-    for (let i = 0, t = 0; i < 120 && t < 6000; t++) {
-      const x = (rnd() - 0.5) * 200, z = (rnd() - 0.5) * 250;
-      const h = O.world.height(x, z);
-      if (h < -1.4 || h > 6) continue;
-      const s = 0.3 + Math.pow(rnd(), 2.0) * (h > 1.2 ? 1.9 : 0.9);
-      buckets[(rnd() * 4) | 0].push({
-        x: x, y: h - s * 0.32, z: z,
-        rx: (rnd() - 0.5) * 0.5, ry: rnd() * 6.283, rz: (rnd() - 0.5) * 0.5,
-        sx: s * (0.85 + rnd() * 0.5), sy: s, sz: s * (0.85 + rnd() * 0.5)
+    /* ---------- Badebro ---------- */
+    (function pier() {
+      const woodMat = new THREE.MeshStandardMaterial({
+        color: O.srgb(0x8a7355), roughness: 0.92, metalness: 0, envMapIntensity: 0.5
       });
-      i++;
-    }
-
-    // 3) Grus: mange små sten i sandet langs bredden. De ses knap enkeltvis,
-    //    men de fjerner fornemmelsen af en tom, glat flade.
-    const GRAVEL = O.quality.get('gravel');
-    for (let i = 0, t = 0; i < GRAVEL && t < GRAVEL * 26; t++) {
-      const x = (rnd() - 0.5) * 170, z = (rnd() - 0.5) * 210;
-      const h = O.world.height(x, z);
-      if (h < -0.7 || h > 2.2) continue;
-      const s = 0.025 + Math.pow(rnd(), 2.2) * 0.11;
-      buckets[3].push({
-        x: x, y: h - s * 0.45, z: z,      // halvt nede i sandet
-        rx: (rnd() - 0.5) * 0.5, ry: rnd() * 6.283, rz: (rnd() - 0.5) * 0.5,
-        sx: s * 1.5, sy: s * 0.42, sz: s * 1.35
-      });
-      i++;
-    }
-
-    const stoneColor = new THREE.Color();
-    for (let v = 0; v < 4; v++) {
-      if (!buckets[v].length) continue;
-      const im = instanced(variants[v], rockMat, buckets[v], true, true);
-      for (let i = 0; i < buckets[v].length; i++) {
-        // Variation omkring teksturens egen farve: nogle sten er grå,
-        // andre trækker mod sandstenens rust.
-        const t = rnd();
-        const b = 1.0 + rnd() * 0.6;
-        stoneColor.setRGB(
-          b * M.lerp(0.86, 1.10, t),
-          b * M.lerp(0.88, 0.92, t),
-          b * M.lerp(0.92, 0.74, t)
-        );
-        im.setColorAt(i, stoneColor);
+      const parts = [];
+      // Ud fra stranden mod syd, indtil vandet er dybt nok.
+      let x = 20, z = 150;
+      while (O.world.height(x, z) > 0.6 && z < 240) z += 2;
+      const z0 = z - 6;
+      const len = 46;
+      for (let i = 0; i < len; i += 2) {
+        const zz = z0 + i;
+        const g = new THREE.BoxGeometry(5.0, 0.18, 2.0);
+        g.translate(x, 1.35, zz);
+        parts.push(g);
+        for (const sx of [-2.1, 2.1]) {
+          const pl = new THREE.CylinderGeometry(0.16, 0.18, 5.0, 7);
+          pl.translate(x + sx, -1.1, zz);
+          parts.push(pl);
+        }
+        if (i % 6 === 0) {
+          for (const sx of [-2.3, 2.3]) {
+            const post = new THREE.BoxGeometry(0.12, 1.0, 0.12);
+            post.translate(x + sx, 1.9, zz);
+            parts.push(post);
+          }
+        }
       }
-      if (im.instanceColor) im.instanceColor.needsUpdate = true;
-      im.frustumCulled = false;
-      (v === 3 ? detailGroup : group).add(im);
-    }
-
-    /* ================= Drivtømmer ================= */
-    const stickGeo = new THREE.CylinderGeometry(0.05, 0.08, 1, 6, 1);
-    stickGeo.rotateZ(Math.PI / 2);
-    const stickMat = new THREE.MeshStandardMaterial({
-      color: O.srgb(0x8d7c63), roughness: 0.92, envMapIntensity: 0.35
-    });
-    const sticks = [];
-    for (let i = 0, t = 0; i < 140 && t < 7000; t++) {
-      const x = (rnd() - 0.5) * 160, z = (rnd() - 0.5) * 200;
-      const h = O.world.height(x, z);
-      if (h < -0.2 || h > 2.1) continue;
-      const len = 0.35 + Math.pow(rnd(), 1.8) * 1.7;
-      sticks.push({
-        x: x, y: h + 0.035, z: z,
-        rx: (rnd() - 0.5) * 0.3, ry: rnd() * 6.283, rz: (rnd() - 0.5) * 0.2,
-        sx: len, sy: 0.5 + rnd() * 0.8, sz: 0.5 + rnd() * 0.8
-      });
-      i++;
-    }
-    detailGroup.add(instanced(stickGeo, stickMat, sticks, true, true));
-
-    /* ================= Bål ================= */
-    const fire = new THREE.Group();
-    let fx = 0, fz = 0, found = false;
-    for (let i = 0; i < 4000 && !found; i++) {
-      const ang = rnd() * Math.PI * 2;
-      const rad = 30 + rnd() * 22;
-      const x = Math.cos(ang) * rad, z = Math.sin(ang) * rad + 22;
-      const h = O.world.height(x, z);
-      if (h > 0.12 && h < 0.55) { fx = x; fz = z; found = true; }
-    }
-    const fireY = O.world.height(fx, fz);
-    fire.position.set(fx, fireY, fz);
-
-    const ringGeo = deformedRock(rnd, 1);
-    for (let i = 0; i < 8; i++) {
-      const a = (i / 8) * Math.PI * 2 + rnd() * 0.3;
-      const m = new THREE.Mesh(ringGeo, rockMat);
-      m.position.set(Math.cos(a) * 0.66, 0.0, Math.sin(a) * 0.66);
-      m.scale.setScalar(0.18 + rnd() * 0.12);
-      m.rotation.set(rnd(), rnd() * 3, rnd());
+      for (const sx of [-2.3, 2.3]) {
+        const rail = new THREE.BoxGeometry(0.10, 0.10, len);
+        rail.translate(x + sx, 2.35, z0 + len / 2);
+        parts.push(rail);
+      }
+      const m = new THREE.Mesh(BGU.mergeBufferGeometries(parts), woodMat);
       m.castShadow = true; m.receiveShadow = true;
-      fire.add(m);
-    }
-    const logMat = new THREE.MeshStandardMaterial({ color: O.srgb(0x33241a), roughness: 1.0 });
-    for (let i = 0; i < 5; i++) {
-      const a = (i / 5) * Math.PI * 2 + 0.3;
-      const m = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.06, 0.9, 6), logMat);
-      m.position.set(Math.cos(a) * 0.17, 0.24, Math.sin(a) * 0.17);
-      m.rotation.set(Math.cos(a) * 0.8, 0, Math.sin(a) * -0.8);
-      m.castShadow = true;
-      fire.add(m);
-    }
+      group.add(m);
+    })();
 
-    const FCOUNT = 110;
-    const fpos = new Float32Array(FCOUNT * 3);
-    const fdata = [];
-    for (let i = 0; i < FCOUNT; i++) {
-      fdata.push({ life: rnd(), speed: 0.6 + rnd() * 0.9, ang: rnd() * 6.28, rad: rnd() * 0.13, sway: 0.4 + rnd() });
-    }
-    const fgeo = new THREE.BufferGeometry();
-    fgeo.setAttribute('position', new THREE.BufferAttribute(fpos, 3));
-    const flames = new THREE.Points(fgeo, new THREE.PointsMaterial({
-      map: tex.glow, size: 0.38, transparent: true, blending: THREE.AdditiveBlending,
-      depthWrite: false, color: 0xffa040, sizeAttenuation: true, fog: true
-    }));
-    flames.frustumCulled = false;
-    fire.add(flames);
-
-    const fireLight = new THREE.PointLight(O.srgb(0xff8c30), 3.0, 16, 2);
-    fireLight.position.set(0, 0.6, 0);
-    fire.add(fireLight);
-    group.add(fire);
-
-    api.fire = {
-      group: fire,
-      position: new THREE.Vector3(fx, fireY, fz),
-      update: function (t, dt) {
-        const arr = fgeo.attributes.position.array;
-        for (let i = 0; i < FCOUNT; i++) {
-          const d = fdata[i];
-          d.life += dt * d.speed * 0.8;
-          if (d.life > 1) { d.life -= 1; d.ang = Math.random() * 6.28; d.rad = Math.random() * 0.13; }
-          const l = d.life;
-          arr[i * 3] = Math.cos(d.ang) * d.rad * (1 - l * 0.4) + Math.sin(t * 2.4 * d.sway + i) * 0.09 * l;
-          arr[i * 3 + 1] = 0.18 + l * 1.4;
-          arr[i * 3 + 2] = Math.sin(d.ang) * d.rad * (1 - l * 0.4) + Math.cos(t * 2.1 * d.sway + i) * 0.09 * l;
-        }
-        fgeo.attributes.position.needsUpdate = true;
-        fireLight.intensity = 2.5 + Math.sin(t * 11.0) * 0.4 + Math.sin(t * 23.7) * 0.25;
-      }
-    };
-
-    /* ================= Støv i modlyset ================= */
-    const DCOUNT = 420;
-    const dpos = new Float32Array(DCOUNT * 3);
-    const ddata = [];
-    for (let i = 0; i < DCOUNT; i++) {
-      ddata.push({ x: (rnd() - 0.5) * 55, y: rnd() * 9, z: (rnd() - 0.5) * 55, s: 0.2 + rnd() * 0.5, p: rnd() * 6.28 });
-    }
-    const dgeo = new THREE.BufferGeometry();
-    dgeo.setAttribute('position', new THREE.BufferAttribute(dpos, 3));
-    const dust = new THREE.Points(dgeo, new THREE.PointsMaterial({
-      map: tex.spark, size: 0.065, transparent: true, opacity: 0.5,
-      blending: THREE.AdditiveBlending, depthWrite: false, color: 0xffe4bb, fog: false
-    }));
-    dust.frustumCulled = false;
-    detailGroup.add(dust);
-    api.dust = {
-      update: function (t, camPos) {
-        const arr = dgeo.attributes.position.array;
-        for (let i = 0; i < DCOUNT; i++) {
-          const d = ddata[i];
-          arr[i * 3] = camPos.x + d.x + Math.sin(t * 0.25 * d.s + d.p) * 2.2;
-          arr[i * 3 + 1] = 0.3 + ((d.y + t * 0.13 * d.s) % 9);
-          arr[i * 3 + 2] = camPos.z + d.z + Math.cos(t * 0.21 * d.s + d.p) * 2.2;
-        }
-        dgeo.attributes.position.needsUpdate = true;
-      }
-    };
-
-    api.counts = {
-      plants: plantKinds.reduce((a, k) => a + k.list.length, 0),
-      rocks: buckets.reduce((a, b) => a + b.length, 0),
-      sticks: sticks.length
-    };
-    return api;
+    return { group: group };
   };
 })();

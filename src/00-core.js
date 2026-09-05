@@ -86,15 +86,26 @@
 
   // Global konfiguration som alle moduler læser fra.
   O.config = {
-    seed: 20260903,
+    seed: 20260905,
     waterLevel: 0.0,
-    worldSize: 340,      // terrænets kant-til-kant størrelse
-    playRadius: 108,     // hvor langt spilleren kan gå ud
-    fogColor: 0xcfd8e4,
-    // Solen står højt og lidt bag højre skulder set fra startstedet, så
-    // sandbredden er solbeskinnet og klippernes skygger falder væk fra
-    // betragteren. Lav sol så kløften kastede skygge over hele bredden.
-    sunDirection: { x: 0.36, y: 0.80, z: -0.48 },
+    worldSize: 900,      // terrænets kant-til-kant størrelse (hav + ø)
+    playRadius: 330,     // hvor langt spilleren kan komme ud
+    fogColor: 0xbfd2e2,
+
+    // Byen ligger på et fladt plateau. Alle moduler læser de her tal, så
+    // veje, fortove, huse og terræn flugter i stedet for at gætte hver for sig.
+    city: {
+      plateau: 7.0,
+      avenues: [-84, -28, 28, 84],    // veje der løber nord-syd (faste x)
+      streets: [-88, -32, 24, 80],    // veje der løber øst-vest (faste z)
+      roadHalf: 7.0,                  // halv kørebanebredde
+      walk: 3.4,                      // fortovets bredde uden for kørebanen
+      kerb: 0.16                      // kantstenens højde
+    },
+
+    // Solen står lavt i vest: lange skygger ned ad gaderne, og lys der
+    // rammer facaderne på langs i stedet for oppefra.
+    sunDirection: { x: -0.62, y: 0.52, z: 0.28 },
 
     // Albedo-rettelse for de fotografiske teksturer.
     //

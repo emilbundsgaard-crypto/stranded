@@ -18,7 +18,7 @@ const inlined = html.replace(/<script src="([^"]+)"><\/script>/g, function (m, s
 });
 
 fs.mkdirSync(path.join(root, 'dist'), { recursive: true });
-const out = path.join(root, 'dist', 'oasen.html');
+const out = path.join(root, 'dist', 'isla.html');
 fs.writeFileSync(out, inlined);
 console.log('skrev', path.relative(root, out), (fs.statSync(out).size / 1024 / 1024).toFixed(2) + ' MB');
 

@@ -187,6 +187,47 @@
       return mat;
     },
 
+    // Splatting: to ekstra fotografiske overflader blandes ind i den
+    // grundlæggende farve efter en vertex-attribut. Det er dét, der gør
+    // terrænet til sand ved vandet, græs på sletten og klippe på skrænterne
+    // uden at det ser ud som tre forskellige materialer, der støder sammen.
+    splat: function (mat, grassMap, rockMap, opt) {
+      opt = opt || {};
+      const u = {
+        tSplatA: { value: grassMap },
+        tSplatB: { value: rockMap },
+        uSplatScaleA: { value: opt.scaleA || 1.0 },
+        uSplatScaleB: { value: opt.scaleB || 1.0 },
+        uSplatTintA: { value: new THREE.Vector3(opt.tintA ? opt.tintA[0] : 1, opt.tintA ? opt.tintA[1] : 1, opt.tintA ? opt.tintA[2] : 1) },
+        uSplatTintB: { value: new THREE.Vector3(opt.tintB ? opt.tintB[0] : 1, opt.tintB ? opt.tintB[1] : 1, opt.tintB ? opt.tintB[2] : 1) }
+      };
+      mat.userData.splat = u;
+      chain(mat, function (shader) {
+        Object.keys(u).forEach(function (k) { shader.uniforms[k] = u[k]; });
+        shader.vertexShader =
+          'attribute vec2 aSplat;\nvarying vec2 vSplat;\n' +
+          shader.vertexShader.replace('#include <begin_vertex>',
+            '#include <begin_vertex>\n  vSplat = aSplat;');
+        shader.fragmentShader =
+          'uniform sampler2D tSplatA;\nuniform sampler2D tSplatB;\n' +
+          'uniform float uSplatScaleA;\nuniform float uSplatScaleB;\n' +
+          'uniform vec3 uSplatTintA;\nuniform vec3 uSplatTintB;\nvarying vec2 vSplat;\n' +
+          shader.fragmentShader.replace(
+            '#include <map_fragment>',
+            `#include <map_fragment>
+             {
+               // Billederne læses råt og er sRGB-kodede, så de skal
+               // lineariseres, før de kan blandes med en lineær farve.
+               vec3 sa = pow( texture2D( tSplatA, vUv * uSplatScaleA ).rgb, vec3( 2.2 ) ) * uSplatTintA;
+               vec3 sb = pow( texture2D( tSplatB, vUv * uSplatScaleB ).rgb, vec3( 2.2 ) ) * uSplatTintB;
+               diffuseColor.rgb = mix( diffuseColor.rgb, sa * vColor, clamp( vSplat.x, 0.0, 1.0 ) );
+               diffuseColor.rgb = mix( diffuseColor.rgb, sb * vColor, clamp( vSplat.y, 0.0, 1.0 ) );
+             }`
+          );
+      }, 'splat');
+      return mat;
+    },
+
     // Kornoverflade: et fotografisk stenbillede ganget oven på materialets
     // egen farve. Det normaliseres på sin egen middelværdi, så det tilføjer
     // struktur uden at flytte lysheden — ellers ville klippens lagdeling

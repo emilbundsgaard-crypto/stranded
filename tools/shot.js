@@ -3,12 +3,14 @@ const { chromium } = require('playwright');
 const path = require('path');
 
 const VIEWS = [
-  { name: 'spawn',    yaw: null, pitch: -0.06 },
-  { name: 'water',    pos: [22, -22], yaw: 3.5, pitch: -0.10 },
-  { name: 'cliffs',   pos: [-24, 10], yaw: 1.3, pitch: 0.10 },
-  { name: 'ground',   pos: [26, -40], yaw: 3.5, pitch: -0.75 },
-  { name: 'fire',     pos: [4, 6], yaw: 0.4, pitch: -0.05 },
-  { name: 'wide',     pos: [34, 30], yaw: 4.2, pitch: 0.03 }
+  { name: 'spawn',    yaw: null, pitch: -0.02 },
+  { name: 'street',   pos: [-28, 40], yaw: 0, pitch: 0.05 },
+  { name: 'kryds',    pos: [28, 24], yaw: 0.8, pitch: 0.10 },
+  { name: 'facade',   pos: [-14, -4], yaw: 1.6, pitch: 0.28 },
+  { name: 'strand',   pos: [30, 150], yaw: 3.6, pitch: -0.02 },
+  { name: 'kyst',     pos: [10, 118], yaw: 0.2, pitch: 0.02 },
+  { name: 'bakke',    pos: [-40, -170], yaw: 3.0, pitch: -0.06 },
+  { name: 'skyline',  pos: [120, 130], yaw: 3.9, pitch: 0.06 }
 ];
 
 (async () => {
@@ -44,7 +46,7 @@ const VIEWS = [
       if (v.pos) {
         d.player.pos.x = v.pos[0];
         d.player.pos.z = v.pos[1];
-        d.player.pos.y = window.OASIS.world.height(v.pos[0], v.pos[1]);
+        d.player.pos.y = window.OASIS.world.surface(v.pos[0], v.pos[1]);
       }
       if (v.yaw !== null && v.yaw !== undefined) d.player.yaw = v.yaw;
       d.player.pitch = v.pitch;
@@ -57,12 +59,13 @@ const VIEWS = [
   const info = await page.evaluate(() => {
     const d = window.OASIS.debug;
     return {
-      draws: d.renderer.info.render.calls,
-      tris: d.renderer.info.render.triangles,
-      stones: d.stones.list.length,
-      colliders: window.OASIS.world.colliders.length,
-      spawn: [d.player.pos.x.toFixed(1), d.player.pos.y.toFixed(2), d.player.pos.z.toFixed(1)],
-      fire: [d.props.fire.position.x.toFixed(1), d.props.fire.position.z.toFixed(1)]
+      huse: d.city.buildings.length,
+      folk: d.npcs.list.length,
+      biler: d.vehicles.parked.length + d.vehicles.traffic.length,
+      forhindringer: window.OASIS.world.boxes.length + window.OASIS.world.circles.length,
+      geometrier: d.renderer.info.memory.geometries,
+      teksturer: d.renderer.info.memory.textures,
+      programmer: d.renderer.info.programs ? d.renderer.info.programs.length : 0
     };
   });
   console.log(JSON.stringify(info));

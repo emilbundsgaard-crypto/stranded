@@ -182,7 +182,7 @@
     // Sikker tilstand: en enkel, gennemsigtig flade uden de to ekstra
     // render-pas. Den ser ikke ud af meget, men den kan ikke fejle.
     if (O.safeMode) {
-      const simpleGeo = new THREE.PlaneGeometry(size, size, 8, 8);
+      const simpleGeo = new THREE.PlaneGeometry(size * 3.0, size * 3.0, 8, 8);
       simpleGeo.rotateX(-Math.PI / 2);
       const simpleMat = new THREE.MeshStandardMaterial({
         color: O.srgb(0x2f6f74), roughness: 0.12, metalness: 0.0,
@@ -202,7 +202,9 @@
       };
     }
 
-    const geo = new THREE.PlaneGeometry(size, size, 128, 128);
+    // Havet skal nå horisonten, ikke bare terrænets kant, ellers ser man
+    // kanten af verden som en skarp linje ude i vandet.
+    const geo = new THREE.PlaneGeometry(size * 3.0, size * 3.0, 128, 128);
     geo.rotateX(-Math.PI / 2);
 
     const tex = O.textures.build();

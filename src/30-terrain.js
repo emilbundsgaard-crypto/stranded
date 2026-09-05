@@ -1,85 +1,109 @@
 /* ------------------------------------------------------------------
-   Terrænet: sandbred, flodleje og kløftbund.
+   Øens terræn.
 
-   Farven ligger i vertexfarver (tør sand, grus, våd bræmme, alger i
-   flodlejet), mens en ekstra attribut fortæller materialet hvor vådt
-   sandet er — våd sand er både mørkere og blank, og det er dét, der
-   får vandkanten til at se rigtig ud.
+   Ét net over hele verden, men med vertexerne fordelt radiært: tæt
+   omkring byen, hvor man går, og groft ude ved horisonten, hvor ingen
+   alligevel kan se forskel. Uden den fordeling koster en verden på
+   900 meter enten en million trekanter eller en strand af klodser.
+
+   Overfladen er tre fotografiske materialer blandet efter en
+   vertex-attribut — sand, græs og klippe — plus vådt sand langs
+   vandkanten og kaustik under overfladen.
    ------------------------------------------------------------------ */
 (function () {
   const O = window.OASIS;
   const M = O.math;
 
+  // Radiær omfordeling: u i [-1,1] ind, u ud, men med vægten trukket
+  // ind mod midten. 0.30 er andelen, der bliver ved med at være lineær —
+  // uden den bliver de inderste kvadrater så små, at de flimrer.
+  function warp(u) {
+    const a = Math.abs(u);
+    return (u < 0 ? -1 : 1) * (0.46 * a + 0.54 * Math.pow(a, 2.0));
+  }
+
   function colorAt(x, z, h, out) {
     const wl = O.config.waterLevel;
+    const beach = O.world.beachness(x, z, h);
+    const rock = O.world.rockiness(x, z, h);
     const lush = O.world.lushness(x, z, h);
-    const grit = M.fbm(x * 0.11, z * 0.11, 3);
-    const patch = M.fbm(x * 0.03 + 12, z * 0.03 - 7, 3);
 
-    // Tør sand med langsom variation i lyshed og varme.
-    let r = 1.00 + grit * 0.09 + patch * 0.10;
-    let g = 0.94 + grit * 0.07 + patch * 0.07;
-    let b = 0.83 + grit * 0.05 + patch * 0.04;
+    // Grundtone: lys, varm sandfarve. Splat-laget lægger græs og klippe
+    // ovenpå, så den her farve er mest til stranden og det nøgne.
+    let r = 1.00, g = 0.97, b = 0.92;
 
-    // Grus og hærdet ler på den tørre kløftbund.
-    const gravel = M.smoothstep(0.34, 0.78, M.fbm(x * 0.045 + 40, z * 0.045 - 20, 3)) * M.smoothstep(0.7, 2.4, h);
-    r = M.lerp(r, 0.80, gravel); g = M.lerp(g, 0.67, gravel); b = M.lerp(b, 0.54, gravel);
+    // Vådt sand langs vandkanten er mørkere.
+    const wet = (1 - M.smoothstep(-0.05, 0.75, h - wl)) * M.smoothstep(-0.9, -0.05, h - wl);
+    r = M.lerp(r, 0.62, wet); g = M.lerp(g, 0.58, wet); b = M.lerp(b, 0.52, wet);
 
-    // Fugtigt sand er en bræmme LANGS kanten. Under vandet må sandet ikke
-    // gøres mørkt her — det klarer vandets egen absorption, og gør man det
-    // to gange, ender det lave vand med at se ud som mudder.
-    const wet = (1 - M.smoothstep(-0.02, 0.36, h - wl)) * M.smoothstep(-0.5, -0.02, h - wl);
-    r = M.lerp(r, 0.55, wet); g = M.lerp(g, 0.45, wet); b = M.lerp(b, 0.33, wet);
-
-    // Sand under vand er vådt sand: mørkere og mere mættet, allerede få
-    // centimeter nede. Ellers lyser bunden hvidt igennem det lave vand.
-    const submerged = M.smoothstep(0.0, 0.35, wl - h);
-    r = M.lerp(r, 0.50, submerged); g = M.lerp(g, 0.42, submerged); b = M.lerp(b, 0.31, submerged);
-
-    // Først på dybere vand kommer alger og slam til.
-    const bed = M.smoothstep(0.55, 2.4, wl - h);
-    r = M.lerp(r, 0.40, bed); g = M.lerp(g, 0.41, bed); b = M.lerp(b, 0.30, bed);
-
-    // Det grønne bånd langs vandet.
-    const green = lush * 0.5;
-    r = M.lerp(r, 0.40, green); g = M.lerp(g, 0.47, green); b = M.lerp(b, 0.24, green);
+    // Under vandet: mørkere bund, og alger på det dybere.
+    const sub = M.smoothstep(0.0, 0.6, wl - h);
+    r = M.lerp(r, 0.55, sub); g = M.lerp(g, 0.54, sub); b = M.lerp(b, 0.47, sub);
+    const bed = M.smoothstep(1.0, 5.0, wl - h);
+    r = M.lerp(r, 0.42, bed); g = M.lerp(g, 0.48, bed); b = M.lerp(b, 0.44, bed);
 
     out.r = r; out.g = g; out.b = b;
-    // Vådt sand er en bræmme LANGS vandkanten. Under vandet skal det ikke
-    // være blankt — der ligger jo en vandoverflade ovenpå, og et spejlblankt
-    // bundsand er præcis dét, der giver den mælkede dis på det lave vand.
-    out.wet = M.clamp((1 - M.smoothstep(-0.02, 0.34, h - wl))
-                      * M.smoothstep(-0.32, -0.02, h - wl) * 0.95, 0, 1);
+    out.grass = M.clamp(lush * (1 - sub), 0, 1);
+    out.rock = M.clamp(rock * (1 - beach * 0.6) * (1 - sub * 0.7), 0, 1);
+    out.wet = M.clamp(wet * 0.95 + sub * 0.5, 0, 1);
   }
 
   O.buildTerrain = function (scene, tex, timeUniform) {
     const size = O.config.worldSize;
+    const half = size * 0.5;
     const seg = O.quality.get('terrainSeg');
-    const geo = new THREE.PlaneGeometry(size, size, seg, seg);
-    geo.rotateX(-Math.PI / 2);
+    const n = seg + 1;
 
-    const pos = geo.attributes.position;
-    const colors = new Float32Array(pos.count * 3);
-    const wet = new Float32Array(pos.count);
-    const c = { r: 0, g: 0, b: 0, wet: 0 };
-    for (let i = 0; i < pos.count; i++) {
-      const x = pos.getX(i), z = pos.getZ(i);
-      let h = O.world.height(x, z);
-      // Lidt ekstra finkornet variation nu hvor gitteret er tættere.
-      h += M.fbm(x * 0.55, z * 0.55, 2) * 0.035;
-      pos.setY(i, h);
-      colorAt(x, z, h, c);
-      colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
-      wet[i] = c.wet;
+    const pos = new Float32Array(n * n * 3);
+    const uv = new Float32Array(n * n * 2);
+    const colors = new Float32Array(n * n * 3);
+    const splat = new Float32Array(n * n * 2);
+    const wet = new Float32Array(n * n);
+    const c = { r: 0, g: 0, b: 0, grass: 0, rock: 0, wet: 0 };
+
+    const TILE = 5.5;   // meter pr. teksturflise
+
+    for (let j = 0; j < n; j++) {
+      const v = (j / seg) * 2 - 1;
+      const z = warp(v) * half;
+      for (let i = 0; i < n; i++) {
+        const u = (i / seg) * 2 - 1;
+        const x = warp(u) * half;
+        const k = j * n + i;
+        const h = O.world.height(x, z);
+        pos[k * 3] = x; pos[k * 3 + 1] = h; pos[k * 3 + 2] = z;
+        uv[k * 2] = x / TILE; uv[k * 2 + 1] = z / TILE;
+        colorAt(x, z, h, c);
+        colors[k * 3] = c.r; colors[k * 3 + 1] = c.g; colors[k * 3 + 2] = c.b;
+        splat[k * 2] = c.grass; splat[k * 2 + 1] = c.rock;
+        wet[k] = c.wet;
+      }
     }
+
+    const idx = new (n * n > 65535 ? Uint32Array : Uint16Array)(seg * seg * 6);
+    let p = 0;
+    for (let j = 0; j < seg; j++) {
+      for (let i = 0; i < seg; i++) {
+        const a = j * n + i, b = a + 1, d = a + n, e = d + 1;
+        idx[p++] = a; idx[p++] = d; idx[p++] = b;
+        idx[p++] = b; idx[p++] = d; idx[p++] = e;
+      }
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geo.setAttribute('aSplat', new THREE.BufferAttribute(splat, 2));
     geo.setAttribute('aWet', new THREE.BufferAttribute(wet, 1));
+    geo.setIndex(new THREE.BufferAttribute(idx, 1));
     geo.computeVertexNormals();
+    geo.computeBoundingSphere();
 
     const A = O.config.albedo.sand;
     const mat = new THREE.MeshStandardMaterial({
-      // Farven her er ikke pynt: den trækker fotoet af sand ned til en
-      // rigtig albedo (se O.config.albedo).
+      // Farven trækker fotoet af sand ned til en rigtig albedo
+      // (se O.config.albedo).
       color: new THREE.Color(A.r, A.g, A.b),
       map: tex.sand,
       normalMap: tex.sandNormal,
@@ -90,9 +114,20 @@
       metalness: 0.0,
       envMapIntensity: 0.7
     });
-    if (O.quality.get('pom')) O.shaderlib.parallax(mat, tex.sandNormal, 0.010, 16.0);
+
+    if (tex.grass && tex.rockGrain) {
+      // Samme regnestykke som for sandet: fotoernes egen lyshed trækkes ned
+      // til noget, der kan bruges som albedo, og den blå kanal løftes, fordi
+      // fotografier af græs og sten er meget blå-fattige. Målt på
+      // billedernes middelværdi i lineært rum.
+      O.shaderlib.splat(mat, tex.grass, tex.rockGrain, {
+        scaleA: 0.55, scaleB: 1.7,
+        tintA: [1.20, 0.86, 2.80],
+        tintB: [0.63, 0.66, 0.68]
+      });
+    }
     O.shaderlib.detailNormal(mat, tex.detailNormal, 6.0, 0.30);
-    O.shaderlib.macroVariation(mat, tex.macro, 0.030, 0.35);
+    O.shaderlib.macroVariation(mat, tex.macro, 0.016, 0.42);
     O.shaderlib.wetness(mat, 0.45);
     if (tex.caustics) O.shaderlib.caustics(mat, timeUniform, O.config.waterLevel, tex.caustics);
 

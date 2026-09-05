@@ -32,13 +32,11 @@
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.outputEncoding = THREE.sRGBEncoding;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 0.78;
+    renderer.toneMappingExposure = 0.80;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = Q.shadowSoft ? THREE.VSMShadowMap : THREE.PCFSoftShadowMap;
-    renderer.shadowMap.autoUpdate = false;   // styres manuelt i render-løkken
+    renderer.shadowMap.autoUpdate = false;
 
-    // Mister vi WebGL-konteksten (typisk fordi grafikhukommelsen løb tør),
-    // skal spilleren få besked i stedet for en grå skærm.
     canvas.addEventListener('webglcontextlost', function (e) {
       e.preventDefault();
       const box = document.getElementById('lostBox');
@@ -51,25 +49,35 @@
     }, false);
 
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(66, window.innerWidth / window.innerHeight,
-                                               0.08, Q.drawDistance + 500);
+    const FOV = 68;
+    const camera = new THREE.PerspectiveCamera(FOV, window.innerWidth / window.innerHeight,
+                                               0.06, Q.drawDistance + 700);
     scene.add(camera);
 
     const timeUniform = { value: 0 };
-    let tex, sky, terrain, cliffs, water, props, stones, player, audio, post, wreck, tracks;
+    let tex, sky, terrain, city, vehicles, water, props, player, audio, post, tracks, weapons, npcs, police;
 
     const steps = [
-      ['Henter teksturer…', function (done) { O.assets.load(function () { done(); }); }],
-      ['Blander sand og sten…', function () { tex = O.textures.build(renderer); }],
+      ['Henter teksturer og modeller…', function (done) { O.assets.load(function () { done(); }); }],
+      ['Blander asfalt og facader…', function () { tex = O.textures.build(renderer); }],
       ['Rejser himlen…', function () { sky = O.buildSky(scene, renderer, camera); }],
-      ['Former flodlejet…', function () { terrain = O.buildTerrain(scene, tex, timeUniform); }],
-      ['Stabler kløftens lag…', function () { cliffs = O.buildCliffs(scene, tex); }],
-      ['Fylder vand i oasen…', function () { water = O.buildWater(scene, renderer, camera, sky); }],
-
-      ['Efterlader et vrag i vandet…', function () { wreck = O.buildWreck(scene, tex, timeUniform); }],
-      ['Sår græs og tænder bål…', function () { props = O.buildProps(scene, tex, timeUniform); }],
-      ['Spreder sten på bredden…', function () { stones = O.buildStones(scene, tex); }],
+      ['Former øen…', function () { terrain = O.buildTerrain(scene, tex, timeUniform); }],
+      ['Lægger gader og karreer…', function () {
+        city = O.buildCity(scene, tex);
+        O.world.setBlocks(city.blocks);
+      }],
+      ['Fylder havet op…', function () { water = O.buildWater(scene, renderer, camera, sky); }],
+      ['Planter palmer…', function () { props = O.buildProps(scene, tex, timeUniform); }],
+      ['Parkerer bilerne…', function () { vehicles = O.buildVehicles(scene, tex); }],
       ['Gør klar til fodspor…', function () { tracks = O.buildTracks(scene); }],
+      ['Sender folk på gaden…', function () { npcs = O.buildNpcs(scene, camera); }],
+      ['Sætter en patrulje ind…', function () {
+        police = O.buildPolice(scene, npcs, {
+          playerPos: function () { return player ? player.pos : new THREE.Vector3(); },
+          onShot: function (from) { audio.gunshot('pistol'); },
+          onPlayerHit: function () { hud.toast('Ramt!'); }
+        });
+      }],
       ['Kobler skygger på…', function () {
         if (O.safeMode) return;
         const seen = new Set();
@@ -93,7 +101,6 @@
       }],
       ['Blander farverne…', function () {
         if (O.safeMode) {
-          // Ingen efterbehandling overhovedet: scenen går direkte på skærmen.
           post = {
             render: function () { renderer.setRenderTarget(null); renderer.render(scene, camera); },
             resize: function () {}, setQuality: function () {},
@@ -104,14 +111,35 @@
           post = O.buildPost(renderer, scene, camera);
         }
       }],
-      ['Varmer shaderne op…', function () {
-        // Uden det her oversættes shaderne først, når man drejer og et nyt
-        // materiale kommer i billedet — det giver hak de første sekunder.
-        renderer.compile(scene, camera);
-      }],
       ['Snører støvlerne…', function () {
         player = O.buildPlayer(camera, canvas);
         audio = O.buildAudio();
+      }],
+      ['Lader magasinerne…', function () {
+        weapons = O.buildWeapons(camera, scene, {
+          // Både folk og betjente kan rammes; de ligger i samme liste, når
+          // strålen skal afgøre, hvad den løb ind i.
+          npcs: function () { return npcs.list.concat(police.units); },
+          playerSpeed: function () { return player.speed || 0; },
+          onNpcHit: function (p, dmg, dir) {
+            const killed = p.isCop ? police.hit(p, dmg, dir) : npcs.hit(p, dmg, dir);
+            hud.hit(killed);
+            if (!p.isCop) police.crime(killed ? 2 : 1);
+            if (killed) hud.feed('<b>' + (p.isCop ? 'Betjent' : 'Civil') + '</b> — nede');
+            return killed;
+          },
+          onShot: function (kind) {
+            audio.gunshot(kind);
+            npcs.alarm(player.pos.x, player.pos.z, 55);
+            police.crime(0.34);
+          },
+          onDryFire: function () { audio.dryFire(); },
+          onReload: function () { audio.reload(); },
+          onSwitch: function (name) { audio.swap(); hud.toast(name); }
+        });
+      }],
+      ['Varmer shaderne op…', function () {
+        renderer.compile(scene, camera);
       }]
     ];
 
@@ -126,7 +154,6 @@
       const [label, fn] = steps[stepIndex];
       hud.setLoading(label, stepIndex / steps.length);
       requestAnimationFrame(function () {
-        // Et trin, der tager et argument, er asynkront og melder selv færdig.
         if (fn.length >= 1) {
           fn(function () { stepIndex++; setTimeout(runStep, 0); });
         } else {
@@ -154,8 +181,6 @@
         };
       }
 
-      // Læser nogle få pixels fra det færdige billede og svarer på, hvor
-      // meget de er forskellige. Nul betyder: alt har præcis samme farve.
       const probe = new Uint8Array(4);
       function imageSpread() {
         try {
@@ -178,34 +203,37 @@
           return -1;
         }
       }
-      const hideInReflection = [player.hand, stones.highlight, props.detailGroup];
 
-      // Startskærmen ligger oven på lærredet, så klikket fanges på
-      // dokumentet — ellers ville man aldrig komme i gang.
-      // Et tryk på en knap må ikke også starte spillet — ellers skifter man
-      // kvalitet og går ind i kløften i samme bevægelse.
+      // Våbnet må ikke stå i spejlingen — det hænger fast på kameraet.
+      const hideInReflection = [weapons.root, weapons.fxGroup];
+
       function onButton(e) {
         return !!(e.target && e.target.closest && e.target.closest('button'));
       }
 
       document.addEventListener('mousedown', function (e) {
         if (onButton(e)) return;
-        if (player.locked) return;
-        const first = !player.started;
-        player.requestLock();
-        if (first) audio.start();
-        hud.hideOverlay();
+        if (!player.locked) {
+          const first = !player.started;
+          player.requestLock();
+          if (first) audio.start();
+          hud.hideOverlay();
+          return;
+        }
+        if (e.button === 0) player.triggerDown = true;
+        if (e.button === 2) { weapons.setAds(true); player.aiming = true; }
       });
-
-      canvas.addEventListener('mousedown', function (e) {
-        if (player.locked && e.button === 0) tryPickup();
+      window.addEventListener('mouseup', function (e) {
+        if (e.button === 0) player.triggerDown = false;
+        if (e.button === 2) { weapons.setAds(false); player.aiming = false; }
       });
+      window.addEventListener('wheel', function (e) {
+        if (!player.locked) return;
+        if (e.deltaY > 0) weapons.next(); else weapons.prev();
+      }, { passive: true });
 
-      // Klik uden pointer lock (fx i en indlejret ramme) samler også op.
-      player.onClick = tryPickup;
-      hud.initTouch(player, tryPickup);
+      hud.initTouch(player, weapons);
 
-      // På en telefon starter spillet ved den første berøring.
       document.addEventListener('touchstart', function (e) {
         if (onButton(e)) return;
         if (!player.started) { player.started = true; audio.start(); }
@@ -214,27 +242,19 @@
 
       player.onLockChange = function (locked, was) {
         if (locked) hud.hideOverlay();
-        else if (was) hud.showOverlay(true);
+        else if (was) { hud.showOverlay(true); player.triggerDown = false; }
       };
 
       window.addEventListener('keydown', function (e) {
         if (!player.started) return;
-        if (e.code === 'KeyE') tryPickup();
+        if (e.code === 'KeyR') weapons.reload();
+        if (e.code === 'Digit1') weapons.switchTo(0);
+        if (e.code === 'Digit2') weapons.switchTo(1);
+        if (e.code === 'Digit3') weapons.switchTo(2);
+        if (e.code === 'KeyQ') weapons.next();
         if (e.code === 'KeyF') hud.toggle();
         if (e.code === 'KeyM') hud.setSound(audio.toggle());
       });
-
-      function tryPickup() {
-        const focus = stones.focus;
-        if (!focus) return;
-        const geo = focus.geometry;
-        const type = stones.collect();
-        if (!type) return;
-        player.showPickup(type, geo);
-        hud.addStone(type);
-        hud.setPrompt(null);
-        audio.pickup(type.tier);
-      }
 
       window.addEventListener('resize', function () {
         camera.aspect = window.innerWidth / window.innerHeight;
@@ -247,62 +267,72 @@
         water.resize();
       });
 
+      let lastAmmo = -1, lastIdx = -1, lastRes = -1, lastHp = -1;
+
       function frame() {
         requestAnimationFrame(frame);
         const dt = Math.min(0.05, clock.getDelta());
         t += dt;
         timeUniform.value = t;
 
+        // Rekylen lever i våbenmodulet, men kameraet skal bruge den.
+        player.recoilPitch = weapons.state.recoilPitch;
+        player.recoilYaw = weapons.state.recoilYaw;
         player.update(dt, t);
 
-        // Skridtlyde efter tilbagelagt afstand …
+        if (player.triggerDown && player.started) {
+          const sp = weapons.spec();
+          if (sp.auto || !player.firedOnce) {
+            if (weapons.fire(t)) player.firedOnce = true;
+          }
+        }
+        if (!player.triggerDown) player.firedOnce = false;
+
+        weapons.update(dt, t, player);
+        npcs.update(dt, player.pos);
+        police.update(dt, player);
+        vehicles.update(dt, player.pos);
+
+        // Sigtekornet giver et smallere synsfelt.
+        const wantFov = FOV * (1 - weapons.state.ads * (1 - weapons.spec().adsFov));
+        if (Math.abs(camera.fov - wantFov) > 0.01) {
+          camera.fov = wantFov;
+          camera.updateProjectionMatrix();
+        }
+
         stepDistance += player.speed * dt;
         if (stepDistance > (player.speed > 5 ? 2.1 : 1.7)) {
           stepDistance = 0;
-          audio.step(player.inWater);
+          if (player.onGround) audio.step(player.inWater);
         }
-        // … og et fodspor for hvert skridt, som er kortere end lydens interval.
         printDistance += player.speed * dt;
-        if (printDistance > 0.78 && !player.swimming) {
+        if (printDistance > 0.85 && !player.swimming && player.onGround) {
           printDistance = 0;
-          tracks.step(player.pos, player.yaw,
-                      O.world.waterDepth(player.pos.x, player.pos.z));
+          const beach = O.world.beachness(player.pos.x, player.pos.z);
+          if (beach > 0.45 && O.world.cityMask(player.pos.x, player.pos.z) < 0.4) {
+            tracks.step(player.pos, player.yaw, O.world.waterDepth(player.pos.x, player.pos.z));
+          }
         }
         tracks.update(dt);
-        audio.setWaterProximity(1 - Math.min(1, Math.max(0,
-          (O.world.river(player.pos.x, player.pos.z).d - O.world.river(player.pos.x, player.pos.z).w) / 22)));
 
-        stones.updateFocus(camera);
-        hud.setPrompt(stones.focus ? stones.focus.userData.type : null);
-        stones.update(t);
-        props.fire.update(t, dt);
-        props.dust.update(t, camera.position);
+        const seaDist = Math.max(0, O.world.height(player.pos.x, player.pos.z));
+        audio.setWaterProximity(1 - Math.min(1, seaDist / 12));
 
-        // Kaskaderne følger kameraet, så det nære altid får den skarpeste
-        // skyggeopløsning.
         camera.updateMatrixWorld();
         sky.csm.update();
         sky.uniforms.uTime.value = t;
-
-        // Skyggekortene tegnes én gang pr. billede — vandets ekstra pas
-        // genbruger dem.
         renderer.shadowMap.needsUpdate = true;
 
         water.uniforms.uTime.value = t;
         water.uniforms.uCamPos.value.copy(camera.position);
 
-        // Spejlingen opdateres hver frame — eller hver anden, hvis maskinen
-        // er presset. Er der slet intet vand i nærheden, springes begge de
-        // ekstra pas over.
+        // Havet spejler kun, når man er tæt nok på til at se det.
         reflectSkip++;
-        const rv = O.world.river(camera.position.x, camera.position.z);
-        const toWater = rv.d - rv.w;
-        if (toWater < 170 && (quality === 1 || reflectSkip % 2 === 0)) {
-          water.update(scene, hideInReflection, toWater < 40);
+        const toWater = O.world.height(camera.position.x, camera.position.z);
+        if (toWater < 24 && (quality === 1 || reflectSkip % 2 === 0)) {
+          water.update(scene, hideInReflection, toWater < 6);
         }
 
-        // Fejler efterbehandlingen på en driver, jeg ikke kan afprøve, så
-        // falder vi tilbage til den simple visning i stedet for at fryse.
         try {
           post.render(dt, t);
         } catch (err) {
@@ -315,11 +345,18 @@
         }
         O.debug.frames++;
 
-        // Vagthund: et billede kan sagtens blive tegnet uden en eneste fejl
-        // og alligevel være ensfarvet — det sker, når en driver behandler
-        // noget i pipelinen anderledes end min. Er billedet fladt, går vi
-        // uden om efterbehandlingen i stedet for at lade brugeren stirre på
-        // en grå skærm.
+        /* ---- HUD ---- */
+        const ws = weapons.state;
+        if (ws.ammo[ws.index] !== lastAmmo || ws.index !== lastIdx || ws.reserve[ws.index] !== lastRes) {
+          lastAmmo = ws.ammo[ws.index]; lastIdx = ws.index; lastRes = ws.reserve[ws.index];
+          hud.setWeapon(weapons.spec(), lastAmmo, lastRes, lastIdx);
+        }
+        if (player.health !== lastHp) { lastHp = player.health; hud.setHealth(lastHp); }
+        hud.setAds(ws.ads > 0.5);
+        hud.setHurt(player.hurtFlash || 0);
+        hud.update(dt, player, npcs.list, vehicles.traffic);
+        hud.setWanted(police.wanted);
+
         if (O.debug.frames === 5 || O.debug.frames === 40) {
           const spread = imageSpread();
           O.diagnostics.note('billedvariation ved billede ' + O.debug.frames + ': ' + spread);
@@ -337,8 +374,6 @@
           }
         }
 
-        // Automatisk nedtrapning. Den skal reagere hurtigt — det hjælper
-        // ingen at opdage efter ti sekunder, at maskinen ikke kan følge med.
         frameAcc += dt; frames++;
         if (frames >= 30) {
           const avg = frameAcc / frames;
@@ -362,12 +397,12 @@
         }
       }
 
-      // Bruges af udviklings-scriptet til at tage skærmbilleder.
       O.debug = {
         frames: 0,
         scene: scene, camera: camera, renderer: renderer, player: player,
-        stones: stones, water: water, sky: sky, props: props, post: post, wreck: wreck, tracks: tracks,
-        terrain: terrain, cliffs: cliffs, hud: hud
+        water: water, sky: sky, props: props, post: post, tracks: tracks,
+        terrain: terrain, city: city, vehicles: vehicles, npcs: npcs, police: police,
+        weapons: weapons, hud: hud
       };
 
       hud.showOverlay(false);

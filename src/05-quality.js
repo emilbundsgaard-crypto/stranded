@@ -20,35 +20,40 @@
       shadowCascades: 4, shadowSize: 3072, shadowSoft: true,
       reflect: 1.0, refract: 0.85, ssao: 0.75, bloom: true, godrays: true, smaa: true,
       pom: true, plants: 2400, gravel: 2600, terrainSeg: 420, cliffCols: 96,
-      grassShadows: true, drawDistance: 1100, bladesPerCluster: 34
+      grassShadows: true, bladesPerCluster: 34,
+      npcs: 42, cars: 34, palms: 260, streetProps: 1.0, drawDistance: 1500
     },
     ultra: {
       label: 'Ultra', pixelRatio: 2.0,
       shadowCascades: 3, shadowSize: 2048, shadowSoft: true,
       reflect: 1.0, refract: 0.7, ssao: 0.5, bloom: true, godrays: true, smaa: true,
       pom: true, plants: 1500, gravel: 1500, terrainSeg: 300, cliffCols: 64,
-      grassShadows: true, drawDistance: 900, bladesPerCluster: 24
+      grassShadows: true, bladesPerCluster: 24,
+      npcs: 30, cars: 26, palms: 200, streetProps: 1.0, drawDistance: 1300
     },
     high: {
       label: 'Høj', pixelRatio: 1.5,
       shadowCascades: 3, shadowSize: 1536, shadowSoft: true,
       reflect: 0.7, refract: 0.5, ssao: 0.5, bloom: true, godrays: true, smaa: true,
       pom: true, plants: 1200, gravel: 1200, terrainSeg: 260, cliffCols: 52,
-      grassShadows: true, drawDistance: 900, bladesPerCluster: 16
+      grassShadows: true, bladesPerCluster: 16,
+      npcs: 22, cars: 20, palms: 160, streetProps: 0.8, drawDistance: 1200
     },
     medium: {
       label: 'Middel', pixelRatio: 1.25,
       shadowCascades: 2, shadowSize: 1024, shadowSoft: false,
       reflect: 0.5, refract: 0.4, ssao: 0, bloom: true, godrays: false, smaa: false,
       pom: false, plants: 900, gravel: 700, terrainSeg: 220, cliffCols: 40,
-      grassShadows: false, drawDistance: 800, bladesPerCluster: 10
+      grassShadows: false, bladesPerCluster: 10,
+      npcs: 14, cars: 14, palms: 110, streetProps: 0.6, drawDistance: 1100
     },
     low: {
       label: 'Lav', pixelRatio: 1.0,
       shadowCascades: 2, shadowSize: 1024, shadowSoft: false,
       reflect: 0.35, refract: 0.3, ssao: 0, bloom: false, godrays: false, smaa: false,
       pom: false, plants: 550, gravel: 400, terrainSeg: 180, cliffCols: 30,
-      grassShadows: false, drawDistance: 700, bladesPerCluster: 6
+      grassShadows: false, bladesPerCluster: 6,
+      npcs: 8,  cars: 9,  palms: 70,  streetProps: 0.4, drawDistance: 950
     }
   };
 

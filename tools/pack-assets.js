@@ -10,14 +10,16 @@ const path = require('path');
 
 const root = path.resolve(__dirname, '..');
 const dir = path.join(root, 'assets');
-const files = fs.readdirSync(dir).filter(f => /\.(jpg|png)$/i.test(f)).sort();
+const files = fs.readdirSync(dir).filter(f => /\.(jpg|png|glb)$/i.test(f)).sort();
 
 let total = 0;
 const entries = files.map(function (f) {
   const buf = fs.readFileSync(path.join(dir, f));
   total += buf.length;
-  const mime = /\.png$/i.test(f) ? 'image/png' : 'image/jpeg';
-  const key = f.replace(/\.(jpg|png)$/i, '');
+  const mime = /\.png$/i.test(f) ? 'image/png'
+             : /\.glb$/i.test(f) ? 'model/gltf-binary'
+             : 'image/jpeg';
+  const key = f.replace(/\.(jpg|png|glb)$/i, '');
   return '    ' + JSON.stringify(key) + ': "data:' + mime + ';base64,' +
          buf.toString('base64') + '"';
 });
@@ -36,6 +38,7 @@ ${entries.join(',\n')}
   };
 
   const loaded = {};
+  const models = {};
 
   O.assets = {
     data: DATA,
@@ -44,23 +47,32 @@ ${entries.join(',\n')}
     // klar. De ligger som data-URI'er, så det tager millisekunder — men vi
     // venter alligevel, så intet popper ind midt i billedet.
     load: function (onDone) {
-      const loader = new THREE.TextureLoader();
+      const texLoader = new THREE.TextureLoader();
+      const gltfLoader = THREE.GLTFLoader ? new THREE.GLTFLoader() : null;
       const keys = Object.keys(DATA);
       let left = keys.length;
       if (!left) { onDone(loaded); return; }
+      function done() { if (--left === 0) onDone(loaded); }
       keys.forEach(function (k) {
-        loader.load(DATA[k], function (tex) {
+        const uri = DATA[k];
+        if (uri.indexOf('data:model/gltf-binary') === 0) {
+          // Modellerne ligger som data-URI'er ligesom billederne. Fejler en
+          // af dem, kører spillet videre uden den i stedet for at hænge.
+          if (!gltfLoader) { done(); return; }
+          gltfLoader.load(uri, function (gltf) { models[k] = gltf; done(); },
+                          undefined, function () { done(); });
+          return;
+        }
+        texLoader.load(uri, function (tex) {
           tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
           loaded[k] = tex;
-          if (--left === 0) onDone(loaded);
-        }, undefined, function () {
-          // Fejler et billede, kører vi videre uden det.
-          if (--left === 0) onDone(loaded);
-        });
+          done();
+        }, undefined, function () { done(); });
       });
     },
 
-    get: function (name) { return loaded[name] || null; }
+    get: function (name) { return loaded[name] || null; },
+    model: function (name) { return models[name] || null; }
   };
 })();
 `;

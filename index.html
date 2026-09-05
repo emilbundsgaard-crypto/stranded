@@ -3,17 +3,19 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
-<title>Oasen i kløften</title>
+<title>Isla Verano</title>
 <style>
   :root {
-    --sand: #e7d7bd;
-    --ink: #1b1712;
-    --warm: #f4b350;
+    --ink: #0d1014;
+    --paper: #e9eef3;
+    --hot: #ffb02e;
+    --hp: #4ad06a;
+    --bad: #e0483c;
   }
   * { box-sizing: border-box; }
   html, body {
     margin: 0; padding: 0; height: 100%; overflow: hidden;
-    background: #0b0a09; color: var(--sand);
+    background: #05070a; color: var(--paper);
     font-family: "Avenir Next", "Segoe UI", Inter, system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
   }
@@ -23,81 +25,138 @@
   #hud { position: fixed; inset: 0; pointer-events: none; transition: opacity .35s ease; }
 
   #crosshair {
-    position: absolute; left: 50%; top: 50%; width: 5px; height: 5px;
-    margin: -2.5px 0 0 -2.5px; border-radius: 50%;
-    background: rgba(255,255,255,.75); box-shadow: 0 0 6px rgba(0,0,0,.55);
-    transition: transform .15s ease;
+    position: absolute; left: 50%; top: 50%; width: 26px; height: 26px;
+    margin: -13px 0 0 -13px; transition: transform .12s ease, opacity .12s ease;
+  }
+  #crosshair i {
+    position: absolute; background: rgba(255,255,255,.82);
+    box-shadow: 0 0 4px rgba(0,0,0,.8);
+  }
+  #crosshair i:nth-child(1) { left: 50%; top: 0; width: 1.5px; height: 8px; margin-left: -.75px; }
+  #crosshair i:nth-child(2) { left: 50%; bottom: 0; width: 1.5px; height: 8px; margin-left: -.75px; }
+  #crosshair i:nth-child(3) { top: 50%; left: 0; height: 1.5px; width: 8px; margin-top: -.75px; }
+  #crosshair i:nth-child(4) { top: 50%; right: 0; height: 1.5px; width: 8px; margin-top: -.75px; }
+  #crosshair.ads { transform: scale(.35); opacity: .35; }
+
+  #hitmark {
+    position: absolute; left: 50%; top: 50%; width: 22px; height: 22px;
+    margin: -11px 0 0 -11px; opacity: 0; transition: opacity .1s ease;
+  }
+  #hitmark.kill i { background: var(--bad); }
+  #hitmark i { position: absolute; width: 8px; height: 2px; background: #fff;
+               box-shadow: 0 0 4px rgba(0,0,0,.9); }
+  #hitmark i:nth-child(1) { left: 0; top: 2px; transform: rotate(45deg); }
+  #hitmark i:nth-child(2) { right: 0; top: 2px; transform: rotate(-45deg); }
+  #hitmark i:nth-child(3) { left: 0; bottom: 2px; transform: rotate(-45deg); }
+  #hitmark i:nth-child(4) { right: 0; bottom: 2px; transform: rotate(45deg); }
+  #hitmark.on { opacity: 1; }
+
+  #hurt {
+    position: absolute; inset: 0; opacity: 0; pointer-events: none;
+    background: radial-gradient(110% 80% at 50% 50%, rgba(190,20,10,0) 45%, rgba(170,15,8,.75) 100%);
+    transition: opacity .18s ease;
   }
 
-  #prompt {
-    position: absolute; left: 50%; top: calc(50% + 34px); transform: translate(-50%, 6px);
-    padding: 7px 14px; border-radius: 999px;
-    background: rgba(18,15,11,.6); border: 1px solid rgba(255,255,255,.14);
-    backdrop-filter: blur(7px);
-    font-size: 13.5px; letter-spacing: .2px; white-space: nowrap;
-    opacity: 0; transition: opacity .16s ease, transform .16s ease;
+  /* Nederste venstre: helbred og kort */
+  #left { position: absolute; left: 20px; bottom: 18px; }
+  #mapWrap {
+    width: 158px; height: 158px; border-radius: 10px; overflow: hidden;
+    border: 1.5px solid rgba(255,255,255,.16);
+    box-shadow: 0 6px 22px rgba(0,0,0,.5);
+    background: rgba(10,14,18,.7); position: relative;
   }
-  #prompt.show { opacity: 1; transform: translate(-50%, 0); }
-  #prompt b {
-    display: inline-block; min-width: 18px; margin-right: 6px; padding: 1px 5px;
-    border-radius: 4px; background: rgba(255,255,255,.16); font-size: 11.5px;
+  #map { display: block; width: 100%; height: 100%; }
+  #mapMe {
+    position: absolute; left: 50%; top: 50%; width: 0; height: 0;
+    border-left: 5px solid transparent; border-right: 5px solid transparent;
+    border-bottom: 11px solid var(--hot); margin: -6px 0 0 -5px;
+    filter: drop-shadow(0 0 3px rgba(0,0,0,.8));
   }
+  #wanted { margin-bottom: 7px; font-size: 17px; line-height: 1; letter-spacing: 2px; }
+  #wanted i { font-style: normal; color: rgba(255,255,255,.14); transition: color .25s ease; }
+  #wanted i.on { color: #ffd24a; text-shadow: 0 0 10px rgba(255,180,40,.7); }
 
-  /* Berøringsstyring — vises kun på skærme man rører ved */
+  #hpRow { display: flex; align-items: center; gap: 9px; margin-top: 11px; }
+  #hpTrack {
+    width: 158px; height: 8px; border-radius: 4px; overflow: hidden;
+    background: rgba(8,11,14,.7); border: 1px solid rgba(255,255,255,.14);
+  }
+  #hpBar { height: 100%; width: 100%; background: linear-gradient(90deg, #3fbf5e, #6fe38a);
+           transition: width .2s ease, background .3s ease; }
+  #hpBar.low { background: linear-gradient(90deg, #b93225, #e0483c); }
+
+  /* Nederste højre: våben */
+  #right {
+    position: absolute; right: 22px; bottom: 18px; text-align: right;
+  }
+  #wName {
+    font-size: 12px; letter-spacing: .22em; text-transform: uppercase;
+    color: rgba(233,238,243,.55); margin-bottom: 2px;
+  }
+  #wAmmo {
+    font-size: 40px; font-weight: 300; line-height: 1;
+    font-variant-numeric: tabular-nums; letter-spacing: .01em;
+    text-shadow: 0 3px 16px rgba(0,0,0,.7);
+  }
+  #wAmmo small { font-size: 17px; color: rgba(233,238,243,.45); margin-left: 6px; }
+  #wAmmo.empty { color: var(--bad); }
+  #wSlots { display: flex; gap: 6px; justify-content: flex-end; margin-top: 9px; }
+  #wSlots div {
+    padding: 3px 9px; border-radius: 6px; font-size: 11px; letter-spacing: .08em;
+    background: rgba(10,14,18,.5); border: 1px solid rgba(255,255,255,.10);
+    color: rgba(233,238,243,.45);
+  }
+  #wSlots div.on { background: rgba(255,176,46,.18); border-color: rgba(255,176,46,.5); color: var(--hot); }
+
+  #feed {
+    position: absolute; right: 22px; top: 54px; text-align: right;
+    font-size: 12.5px; line-height: 1.9; color: rgba(233,238,243,.72);
+  }
+  #feed div { opacity: 0; animation: fade 4s ease forwards; }
+  #feed b { color: var(--hot); font-weight: 600; }
+  @keyframes fade { 0% { opacity: 0; transform: translateX(8px); }
+                    10% { opacity: 1; transform: none; }
+                    75% { opacity: 1; } 100% { opacity: 0; } }
+
+  #toast {
+    position: absolute; left: 50%; top: 20%; transform: translate(-50%, 10px);
+    padding: 9px 18px; border-radius: 9px; border-left: 3px solid var(--hot);
+    background: rgba(10,14,18,.66); backdrop-filter: blur(8px);
+    opacity: 0; transition: opacity .3s ease, transform .3s ease; text-align: center;
+    font-size: 14px; letter-spacing: .04em; white-space: nowrap;
+  }
+  #toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+  /* Berøringsstyring */
   #stick {
     position: absolute; width: 132px; height: 132px; border-radius: 50%;
-    border: 1.5px solid rgba(255,255,255,.16); background: rgba(20,16,12,.22);
+    border: 1.5px solid rgba(255,255,255,.16); background: rgba(10,14,18,.22);
     display: none; transform: translate(-50%, -50%); pointer-events: none;
   }
   #stickKnob {
     position: absolute; left: 50%; top: 50%; width: 54px; height: 54px;
     margin: -27px 0 0 -27px; border-radius: 50%;
-    background: rgba(244,179,80,.30); border: 1.5px solid rgba(244,179,80,.55);
+    background: rgba(255,176,46,.30); border: 1.5px solid rgba(255,176,46,.55);
   }
-  #btnPick {
-    position: absolute; right: 30px; bottom: 118px; width: 84px; height: 84px;
-    border-radius: 50%; display: none; pointer-events: auto; cursor: pointer;
-    font: inherit; font-size: 19px; letter-spacing: .06em;
-    color: rgba(244,230,204,.95); background: rgba(244,179,80,.22);
-    border: 1.5px solid rgba(244,179,80,.6);
+  .tbtn {
+    position: absolute; border-radius: 50%; display: none; pointer-events: auto;
+    cursor: pointer; font: inherit; letter-spacing: .06em;
+    color: rgba(240,236,228,.95); background: rgba(255,176,46,.20);
+    border: 1.5px solid rgba(255,176,46,.55);
   }
-  #btnPick:active { background: rgba(244,179,80,.45); }
+  .tbtn:active { background: rgba(255,176,46,.45); }
+  #btnFire { right: 24px; bottom: 96px; width: 96px; height: 96px; font-size: 15px; }
+  #btnAim { right: 132px; bottom: 168px; width: 66px; height: 66px; font-size: 13px; }
+  #btnJump { right: 132px; bottom: 82px; width: 66px; height: 66px; font-size: 13px; }
+  #btnReload { right: 30px; bottom: 208px; width: 62px; height: 62px; font-size: 13px; }
+  #btnSwap { right: 30px; bottom: 282px; width: 62px; height: 62px; font-size: 13px; }
   body.touch #keys { display: none; }
-  body.touch #btnPick.on { display: block; }
-  #pocket {
-    position: absolute; left: 22px; bottom: 20px; min-width: 208px;
-    padding: 13px 15px 11px; border-radius: 12px;
-    background: linear-gradient(180deg, rgba(20,16,12,.56), rgba(20,16,12,.40));
-    border: 1px solid rgba(255,255,255,.10); backdrop-filter: blur(9px);
-  }
-  #pocket h3 {
-    margin: 0 0 9px; font-size: 10.5px; font-weight: 600;
-    letter-spacing: .18em; text-transform: uppercase; color: rgba(231,215,189,.62);
-    display: flex; justify-content: space-between; align-items: center;
-  }
-  #pocket h3 span { color: var(--warm); font-size: 12px; letter-spacing: normal; }
-  #invList { margin: 0; padding: 0; list-style: none; font-size: 13px; }
-  #invList li { display: flex; align-items: center; gap: 9px; padding: 2.5px 0; }
-  #invList i { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 8px; box-shadow: 0 0 8px currentColor; }
-  #invList .nm { flex: 1; color: rgba(231,215,189,.92); }
-  #invList .ct { color: rgba(231,215,189,.55); font-variant-numeric: tabular-nums; }
-  #invList .empty { color: rgba(231,215,189,.38); font-size: 12px; font-style: italic; }
-
-  #toast {
-    position: absolute; left: 50%; top: 22%; transform: translate(-50%, 10px);
-    padding: 10px 18px; border-radius: 10px; border-left: 3px solid var(--warm);
-    background: rgba(18,15,11,.62); backdrop-filter: blur(8px);
-    opacity: 0; transition: opacity .3s ease, transform .3s ease; text-align: center;
-  }
-  #toast.show { opacity: 1; transform: translate(-50%, 0); }
-  .t-name { display: block; font-size: 15px; letter-spacing: .3px; }
-  .t-rar { display: block; margin-top: 2px; font-size: 10.5px; letter-spacing: .18em;
-           text-transform: uppercase; color: rgba(231,215,189,.55); }
+  body.touch .tbtn { display: block; }
 
   #diag {
     display: none; position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
     width: min(640px, 92vw); max-height: 76vh; z-index: 60; pointer-events: auto;
-    background: rgba(16,13,10,.94); border: 1px solid rgba(255,255,255,.16);
+    background: rgba(8,11,14,.94); border: 1px solid rgba(255,255,255,.16);
     border-radius: 12px; padding: 14px 16px; backdrop-filter: blur(10px);
   }
   .diag-head {
@@ -106,119 +165,101 @@
   }
   .diag-head button {
     font: inherit; font-size: 11.5px; margin-left: 6px; padding: 4px 10px;
-    border-radius: 6px; cursor: pointer; color: rgba(231,215,189,.85);
+    border-radius: 6px; cursor: pointer; color: rgba(233,238,243,.85);
     background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.14);
   }
   .diag-head button:hover { background: rgba(255,255,255,.16); }
   #diagBody {
     margin: 0; max-height: 58vh; overflow: auto; white-space: pre-wrap;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px;
-    line-height: 1.55; color: rgba(231,215,189,.82);
+    line-height: 1.55; color: rgba(233,238,243,.82);
   }
-  .diag-foot { margin-top: 10px; font-size: 11px; color: rgba(231,215,189,.4); }
+  .diag-foot { margin-top: 10px; font-size: 11px; color: rgba(233,238,243,.4); }
   #diagOpen {
     position: absolute; left: 20px; top: 16px; width: 26px; height: 26px;
     border-radius: 50%; cursor: pointer; pointer-events: auto;
     font: inherit; font-size: 13px; line-height: 1;
-    color: rgba(231,215,189,.55); background: rgba(20,16,12,.45);
+    color: rgba(233,238,243,.55); background: rgba(10,14,18,.45);
     border: 1px solid rgba(255,255,255,.14);
   }
-  #diagOpen:hover { color: #f4e6cc; background: rgba(20,16,12,.75); }
+  #diagOpen:hover { color: #fff; background: rgba(10,14,18,.8); }
   #stats {
     position: absolute; right: 20px; top: 16px; text-align: right;
-    font-size: 11px; letter-spacing: .06em; color: rgba(231,215,189,.42);
+    font-size: 11px; letter-spacing: .06em; color: rgba(233,238,243,.42);
     font-variant-numeric: tabular-nums;
   }
-  #quality { margin: 0 0 26px; }
-  .q-label {
-    display: block; font-size: 10px; letter-spacing: .2em; text-transform: uppercase;
-    color: rgba(231,215,189,.45); margin-bottom: 9px;
-  }
-  .q-buttons { display: flex; gap: 7px; justify-content: center; }
-  .q-buttons button {
-    padding: 6px 15px; border-radius: 7px; cursor: pointer;
-    font: inherit; font-size: 12.5px; letter-spacing: .04em;
-    color: rgba(231,215,189,.8); background: rgba(255,255,255,.06);
-    border: 1px solid rgba(255,255,255,.13); transition: all .15s ease;
-  }
-  .q-buttons button:hover { background: rgba(255,255,255,.13); color: #f4e6cc; }
-  .q-buttons button.on {
-    background: rgba(244,179,80,.18); border-color: rgba(244,179,80,.5); color: var(--warm);
-  }
-  .q-note { margin-top: 8px; font-size: 11.5px; color: rgba(231,215,189,.4); min-height: 15px; }
-  #lostBox {
-    display: none; max-width: 430px; text-align: center;
-    background: rgba(30,22,16,.7); border: 1px solid rgba(255,255,255,.12);
-    border-radius: 12px; padding: 22px 26px;
-  }
-  #lostBox h2 { margin: 0 0 8px; font-size: 19px; font-weight: 400; letter-spacing: .04em; }
-  #lostBox p { margin: 0 0 16px; font-size: 13px; line-height: 1.6; color: rgba(231,215,189,.65); }
   #keys {
-    position: absolute; right: 20px; bottom: 20px; text-align: right;
-    font-size: 11.5px; line-height: 1.75; color: rgba(231,215,189,.45);
+    position: absolute; left: 20px; top: 50px; font-size: 11.5px; line-height: 1.75;
+    color: rgba(233,238,243,.42);
   }
-  #keys b { color: rgba(231,215,189,.75); font-weight: 600; }
+  #keys b { color: rgba(233,238,243,.72); font-weight: 600; }
 
   /* ---------- Overlay ---------- */
   #overlay {
     position: fixed; inset: 0; display: flex; flex-direction: column;
     align-items: center; justify-content: center; text-align: center;
-    background: radial-gradient(120% 90% at 50% 40%, rgba(24,19,14,.62), rgba(10,8,6,.92));
+    background: radial-gradient(120% 90% at 50% 40%, rgba(12,18,26,.6), rgba(4,6,9,.94));
     backdrop-filter: blur(3px); z-index: 20; cursor: pointer;
     transition: opacity .5s ease, visibility .5s;
   }
   #overlay.hidden { opacity: 0; visibility: hidden; }
   #overlayTitle {
-    margin: 0; font-size: 46px; font-weight: 300; letter-spacing: .26em;
-    text-transform: uppercase; color: #f0e2c9; text-shadow: 0 2px 30px rgba(0,0,0,.6);
+    margin: 0; font-size: 52px; font-weight: 200; letter-spacing: .30em;
+    text-transform: uppercase; color: #fff; text-shadow: 0 2px 34px rgba(0,0,0,.7);
   }
-  #overlaySub { margin: 12px 0 30px; font-size: 13.5px; color: rgba(231,215,189,.55); letter-spacing: .04em; }
+  #overlaySub { margin: 12px 0 30px; font-size: 13.5px; color: rgba(233,238,243,.55); letter-spacing: .05em; }
   #controls {
     display: grid; grid-template-columns: auto auto; gap: 7px 16px;
-    font-size: 13px; color: rgba(231,215,189,.72); margin-bottom: 30px;
+    font-size: 13px; color: rgba(233,238,243,.72); margin-bottom: 28px;
   }
   #controls kbd {
     justify-self: end; padding: 2px 8px; border-radius: 5px; font-family: inherit; font-size: 11.5px;
     background: rgba(255,255,255,.09); border: 1px solid rgba(255,255,255,.13);
   }
   #controls span { justify-self: start; }
-  #overlayHint { font-size: 13px; color: var(--warm); letter-spacing: .1em; text-transform: uppercase; }
-  #overlayHint::after { content: ''; }
-  #loading { width: 240px; }
-  #loadText { font-size: 12.5px; color: rgba(231,215,189,.6); margin-bottom: 10px; }
+  #overlayHint { font-size: 13px; color: var(--hot); letter-spacing: .1em; text-transform: uppercase; }
+  #loading { width: 260px; }
+  #loadText { font-size: 12.5px; color: rgba(233,238,243,.6); margin-bottom: 10px; }
   #loadTrack { height: 2px; background: rgba(255,255,255,.12); border-radius: 2px; overflow: hidden; }
-  #loadBar { height: 100%; width: 0%; background: var(--warm); transition: width .3s ease; }
+  #loadBar { height: 100%; width: 0%; background: var(--hot); transition: width .3s ease; }
   #startBox { display: none; }
+  #quality { margin: 0 0 26px; }
+  .q-label {
+    display: block; font-size: 10px; letter-spacing: .2em; text-transform: uppercase;
+    color: rgba(233,238,243,.45); margin-bottom: 9px;
+  }
+  .q-buttons { display: flex; gap: 7px; justify-content: center; flex-wrap: wrap; }
+  .q-buttons button {
+    padding: 6px 15px; border-radius: 7px; cursor: pointer;
+    font: inherit; font-size: 12.5px; letter-spacing: .04em;
+    color: rgba(233,238,243,.8); background: rgba(255,255,255,.06);
+    border: 1px solid rgba(255,255,255,.13); transition: all .15s ease;
+  }
+  .q-buttons button:hover { background: rgba(255,255,255,.13); color: #fff; }
+  .q-buttons button.on {
+    background: rgba(255,176,46,.18); border-color: rgba(255,176,46,.5); color: var(--hot);
+  }
+  .q-note { margin-top: 8px; font-size: 11.5px; color: rgba(233,238,243,.4); min-height: 15px; }
+  #lostBox {
+    display: none; max-width: 430px; text-align: center;
+    background: rgba(16,22,28,.72); border: 1px solid rgba(255,255,255,.12);
+    border-radius: 12px; padding: 22px 26px;
+  }
+  #lostBox h2 { margin: 0 0 8px; font-size: 19px; font-weight: 400; letter-spacing: .04em; }
+  #lostBox p { margin: 0 0 16px; font-size: 13px; line-height: 1.6; color: rgba(233,238,243,.65); }
   #fallback {
     display: none; max-width: 420px; font-size: 13px; line-height: 1.6;
-    color: rgba(231,215,189,.75);
+    color: rgba(233,238,243,.75);
   }
 
   @media (max-width: 620px) {
-    #overlayTitle { font-size: 30px; }
-    /* Berøringsstyring — vises kun på skærme man rører ved */
-  #stick {
-    position: absolute; width: 132px; height: 132px; border-radius: 50%;
-    border: 1.5px solid rgba(255,255,255,.16); background: rgba(20,16,12,.22);
-    display: none; transform: translate(-50%, -50%); pointer-events: none;
-  }
-  #stickKnob {
-    position: absolute; left: 50%; top: 50%; width: 54px; height: 54px;
-    margin: -27px 0 0 -27px; border-radius: 50%;
-    background: rgba(244,179,80,.30); border: 1.5px solid rgba(244,179,80,.55);
-  }
-  #btnPick {
-    position: absolute; right: 30px; bottom: 118px; width: 84px; height: 84px;
-    border-radius: 50%; display: none; pointer-events: auto; cursor: pointer;
-    font: inherit; font-size: 19px; letter-spacing: .06em;
-    color: rgba(244,230,204,.95); background: rgba(244,179,80,.22);
-    border: 1.5px solid rgba(244,179,80,.6);
-  }
-  #btnPick:active { background: rgba(244,179,80,.45); }
-  body.touch #keys { display: none; }
-  body.touch #btnPick.on { display: block; }
-  #pocket { min-width: 168px; left: 12px; bottom: 12px; }
+    #overlayTitle { font-size: 32px; }
     #keys { display: none; }
+    #mapWrap { width: 108px; height: 108px; }
+    #hpTrack { width: 108px; }
+    #left { left: 12px; bottom: 12px; }
+    #right { right: 14px; bottom: 12px; }
+    #wAmmo { font-size: 30px; }
   }
 </style>
 </head>
@@ -227,50 +268,65 @@
 <canvas id="scene"></canvas>
 
 <div id="hud">
-  <div id="crosshair"></div>
-  <div id="prompt"></div>
+  <div id="hurt"></div>
+  <div id="crosshair"><i></i><i></i><i></i><i></i></div>
+  <div id="hitmark"><i></i><i></i><i></i><i></i></div>
   <div id="toast"></div>
-  <div id="stick"><div id="stickKnob"></div></div>
-  <button id="btnPick">E</button>
-  <div id="pocket">
-    <h3>Lomme <span id="invCount">0</span></h3>
-    <ul id="invList"></ul>
+  <div id="feed"></div>
+
+  <div id="left">
+    <div id="wanted"><i>★</i><i>★</i><i>★</i><i>★</i><i>★</i></div>
+    <div id="mapWrap"><canvas id="map" width="316" height="316"></canvas><div id="mapMe"></div></div>
+    <div id="hpRow"><div id="hpTrack"><div id="hpBar"></div></div></div>
   </div>
+
+  <div id="right">
+    <div id="wName">Pistol</div>
+    <div id="wAmmo">12<small>/84</small></div>
+    <div id="wSlots"><div class="on">1</div><div>2</div><div>3</div></div>
+  </div>
+
+  <div id="stick"><div id="stickKnob"></div></div>
+  <button class="tbtn" id="btnFire">SKYD</button>
+  <button class="tbtn" id="btnAim">SIGT</button>
+  <button class="tbtn" id="btnJump">HOP</button>
+  <button class="tbtn" id="btnReload">LAD</button>
+  <button class="tbtn" id="btnSwap">VÅBEN</button>
+
   <div id="diag">
     <div class="diag-head">
-      <strong>Diagnostik</strong>
+      <span>Diagnostik</span>
       <span>
         <button id="diagCopy">Kopiér rapport</button>
         <button id="diagClose">Luk</button>
       </span>
     </div>
     <pre id="diagBody"></pre>
-    <div class="diag-foot">F2 åbner og lukker · <code>?safe=1</code> i adressen kører den enkleste udgave</div>
+    <div class="diag-foot">F2 åbner og lukker. ?safe=1 i adressen kører den enkleste vej gennem motoren.</div>
   </div>
   <button id="diagOpen" title="Diagnostik (F2)">?</button>
   <div id="stats"><span id="fps">–</span> fps &nbsp;·&nbsp; <span id="qName">middel</span></div>
   <div id="keys">
-    <div><b>WASD</b> gå &nbsp; <b>Shift</b> løb</div>
-    <div><b>E</b> / klik saml op &nbsp; <b>F</b> skjul HUD</div>
-    <div><b>M</b> lyd (<span id="sndState">til</span>) &nbsp; <b>Esc</b> pause</div>
+    <div><b>WASD</b> gå &nbsp; <b>Skift</b> løb &nbsp; <b>Mellemrum</b> hop &nbsp; <b>Ctrl</b> hug</div>
+    <div><b>Venstre mus</b> skyd &nbsp; <b>Højre mus</b> sigt &nbsp; <b>R</b> lad &nbsp; <b>1–3</b> / hjul våben</div>
+    <div><b>M</b> lyd (<span id="sndState">til</span>) &nbsp; <b>F</b> skjul HUD &nbsp; <b>Esc</b> pause</div>
   </div>
 </div>
 
 <div id="overlay">
-  <h1 id="overlayTitle">Oasen</h1>
-  <p id="overlaySub">En stille flod i kløften. Gå en tur, kig dig omkring, saml sten.</p>
+  <h1 id="overlayTitle">Isla Verano</h1>
+  <p id="overlaySub">En ø med en lille by, en strand og folk på gaden. Tag tre våben med.</p>
   <div id="loading">
     <div id="loadText">Vågner op…</div>
     <div id="loadTrack"><div id="loadBar"></div></div>
   </div>
   <div id="startBox">
     <div id="controls">
-      <kbd>WASD</kbd><span>gå rundt</span>
-      <kbd>Shift</kbd><span>løb</span>
-      <kbd>Mus</kbd><span>kig</span>
-      <kbd>E</kbd><span>saml sten op</span>
-      <kbd>F</kbd><span>skjul HUD (til skærmbilleder)</span>
-      <kbd>Esc</kbd><span>slip musen</span>
+      <kbd>WASD</kbd><span>gå — Skift for at løbe</span>
+      <kbd>Mus</kbd><span>kig — venstre skyder, højre sigter</span>
+      <kbd>1 2 3</kbd><span>pistol, maskinpistol, haglgevær</span>
+      <kbd>R</kbd><span>lad om</span>
+      <kbd>Mellemrum</kbd><span>hop — Ctrl for at hugge sig ned</span>
     </div>
     <div id="quality">
       <span class="q-label">Grafik</span>
@@ -286,21 +342,15 @@
       </div>
       <div class="q-note" id="qNote"></div>
     </div>
-    <div id="overlayHint">Klik for at gå ind i kløften</div>
+    <div id="overlayHint">Klik for at gå ud på gaden</div>
   </div>
   <div id="lostBox">
-    <h2>Grafikken løb tør</h2>
-    <p>Browseren tog 3D-konteksten fra siden — det sker, når grafikhukommelsen
-       slipper op. Vælg et lavere niveau og indlæs igen.</p>
-    <div class="q-buttons">
-      <button data-q="low">Lav</button>
-      <button data-q="medium">Middel</button>
-      <button data-q="high">Høj</button>
-    </div>
+    <h2>Grafikken gav op</h2>
+    <p>Browseren tog grafikkortet fra siden — det sker, når hukommelsen løber tør.
+       Prøv et lavere grafikniveau, eller genindlæs siden.</p>
   </div>
   <div id="fallback">
-    Kunne ikke indlæse 3D-motoren. Åbn mappen med en lille webserver, fx
-    <code>python3 -m http.server</code>, og gå til <code>localhost:8000</code>.
+    three.js kunne ikke indlæses, så scenen kan ikke tegnes.
   </div>
 </div>
 
@@ -318,23 +368,30 @@
 <script src="vendor/three-addons/CSMFrustum.js"></script>
 <script src="vendor/three-addons/CSMShader.js"></script>
 <script src="vendor/three-addons/CSM.js"></script>
+<script src="vendor/three-addons/BufferGeometryUtils.js"></script>
+<script src="vendor/three-addons/GLTFLoader.js"></script>
+<script src="vendor/three-addons/SkeletonUtils.js"></script>
 <script src="src/00-core.js"></script>
 <script src="src/05-quality.js"></script>
 <script src="src/10-world.js"></script>
 <script src="src/15-atmosphere.js"></script>
 <script src="src/20-textures.js"></script>
+<script src="src/21-citytex.js"></script>
 <script src="src/22-assets.js"></script>
 <script src="src/25-shaderlib.js"></script>
 <script src="src/30-terrain.js"></script>
-<script src="src/40-cliffs.js"></script>
+<script src="src/35-city.js"></script>
+<script src="src/45-vehicles.js"></script>
 <script src="src/50-sky.js"></script>
 <script src="src/60-water.js"></script>
 <script src="src/70-props.js"></script>
-<script src="src/75-wreck.js"></script>
 <script src="src/78-tracks.js"></script>
-<script src="src/80-stones.js"></script>
 <script src="src/85-player.js"></script>
+<script src="src/86-ray.js"></script>
+<script src="src/88-weapons.js"></script>
 <script src="src/90-audio.js"></script>
+<script src="src/92-npc.js"></script>
+<script src="src/93-police.js"></script>
 <script src="src/95-hud.js"></script>
 <script src="src/97-post.js"></script>
 <script src="src/98-diagnostics.js"></script>

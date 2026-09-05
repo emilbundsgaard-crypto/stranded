@@ -109,10 +109,82 @@
       });
     }
 
+    /* ---------- Skud ----------
+       Et skud er tre ting oven i hinanden: et kort, hårdt knald, en
+       eksplosiv støjhale og et lavt tryk. Uden trykket lyder det som en
+       klaptræ; uden halen som en klik. */
+    function gunshot(kind) {
+      if (!ready || !enabled) return;
+      const t0 = ctx.currentTime;
+      const heavy = kind === 'shotgun';
+      const light = kind === 'pistol';
+
+      // Knaldet.
+      const crack = ctx.createBufferSource();
+      crack.buffer = noiseBuf;
+      crack.playbackRate.value = heavy ? 0.9 : light ? 1.5 : 1.8;
+      const hp = ctx.createBiquadFilter();
+      hp.type = 'highpass';
+      hp.frequency.value = heavy ? 900 : 1600;
+      const cg = ctx.createGain();
+      cg.gain.setValueAtTime(heavy ? 0.85 : light ? 0.55 : 0.4, t0);
+      cg.gain.exponentialRampToValueAtTime(0.0008, t0 + (heavy ? 0.34 : 0.16));
+      crack.connect(hp); hp.connect(cg); cg.connect(master);
+      crack.start(t0); crack.stop(t0 + 0.4);
+
+      // Trykket nedenunder.
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(heavy ? 150 : 210, t0);
+      osc.frequency.exponentialRampToValueAtTime(heavy ? 42 : 62, t0 + 0.13);
+      const og = ctx.createGain();
+      og.gain.setValueAtTime(heavy ? 0.7 : 0.4, t0);
+      og.gain.exponentialRampToValueAtTime(0.0005, t0 + 0.18);
+      osc.connect(og); og.connect(master);
+      osc.start(t0); osc.stop(t0 + 0.25);
+
+      // Rummet mellem husene svarer igen.
+      const echo = ctx.createBufferSource();
+      echo.buffer = noiseBuf;
+      echo.playbackRate.value = 0.6;
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = 700; bp.Q.value = 0.8;
+      const eg = ctx.createGain();
+      eg.gain.setValueAtTime(0.0001, t0);
+      eg.gain.linearRampToValueAtTime(heavy ? 0.16 : 0.09, t0 + 0.05);
+      eg.gain.exponentialRampToValueAtTime(0.0004, t0 + (heavy ? 0.9 : 0.6));
+      echo.connect(bp); bp.connect(eg); eg.connect(master);
+      echo.start(t0 + 0.02); echo.stop(t0 + 1.1);
+    }
+
+    function click(freq, dur, vol) {
+      if (!ready || !enabled) return;
+      const t0 = ctx.currentTime;
+      const o = ctx.createOscillator();
+      o.type = 'square';
+      o.frequency.setValueAtTime(freq, t0);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(vol || 0.09, t0);
+      g.gain.exponentialRampToValueAtTime(0.0004, t0 + (dur || 0.05));
+      o.connect(g); g.connect(master);
+      o.start(t0); o.stop(t0 + (dur || 0.05) + 0.02);
+    }
+
+    function reloadSound() {
+      click(260, 0.05, 0.10);
+      setTimeout(function () { click(180, 0.07, 0.09); }, 190);
+      setTimeout(function () { click(420, 0.04, 0.08); }, 520);
+    }
+
     return {
       start: function () { init(); if (ctx && ctx.state === 'suspended') ctx.resume(); },
       step: step,
       pickup: pickup,
+      gunshot: gunshot,
+      dryFire: function () { click(140, 0.04, 0.07); },
+      reload: reloadSound,
+      swap: function () { click(320, 0.05, 0.07); },
       setWaterProximity: function (v) {
         if (!ready) return;
         waterGain.gain.setTargetAtTime(enabled ? v * 0.055 : 0, ctx.currentTime, 0.6);

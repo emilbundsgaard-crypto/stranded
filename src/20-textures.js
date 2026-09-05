@@ -418,6 +418,13 @@
     return t;
   }
 
+  // De samme støj- og lærredshjælpere bruges af byens teksturer.
+  O.texutil = {
+    ihash: ihash, tnoise: tnoise, tfbm: tfbm, tridged: tridged,
+    canvas: canvas, toTexture: toTexture, normalFromHeight: normalFromHeight,
+    setAniso: function (a) { maxAniso = a; }
+  };
+
   let cache = null;
   O.textures = {
     build: function (renderer) {
@@ -477,7 +484,15 @@
 
       // Kornoverfladen til klipperne. Den ganges oven på lagfarven, så
       // sandstenen får rigtig struktur uden at miste sin lagdeling.
-      cache.rockGrain = useAsset('rock_grain', 1, false);
+      cache.rockGrain = useAsset('rock_grain', 1, true);
+
+      // Øens græs og facadernes mursten.
+      cache.grass = useAsset('grass', 1, true);
+      cache.brick = useAsset('brick', 1, true);
+
+      // Byens egne overflader tegnes efter de fotografiske er på plads,
+      // så de kan låne dem (asfaltens grus, murstensfacaderne).
+      if (O.citytex) O.citytex.build(cache);
 
       return cache;
     }
