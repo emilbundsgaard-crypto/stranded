@@ -293,9 +293,12 @@
     }
 
     /* ================= Sten, nedfald og grus ================= */
+    const AR = O.config.albedo.rock;
     const rockMat = new THREE.MeshStandardMaterial({
+      // Samme albedo-rettelse som terrænet, bare for sten (se O.config.albedo).
+      color: new THREE.Color(AR.r, AR.g, AR.b),
       map: tex.stone,
-      normalMap: tex.stoneNormal,
+      normalMap: tex.rockDetail || tex.stoneNormal,
       normalScale: new THREE.Vector2(1.2, 1.2),
       roughness: 0.93,
       metalness: 0.0,

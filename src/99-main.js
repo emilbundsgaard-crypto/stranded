@@ -59,6 +59,7 @@
     let tex, sky, terrain, cliffs, water, props, stones, player, audio, post, wreck, tracks;
 
     const steps = [
+      ['Henter teksturer…', function (done) { O.assets.load(function () { done(); }); }],
       ['Blander sand og sten…', function () { tex = O.textures.build(renderer); }],
       ['Rejser himlen…', function () { sky = O.buildSky(scene, renderer, camera); }],
       ['Former flodlejet…', function () { terrain = O.buildTerrain(scene, tex, timeUniform); }],
@@ -125,9 +126,14 @@
       const [label, fn] = steps[stepIndex];
       hud.setLoading(label, stepIndex / steps.length);
       requestAnimationFrame(function () {
-        fn();
-        stepIndex++;
-        setTimeout(runStep, 0);
+        // Et trin, der tager et argument, er asynkront og melder selv færdig.
+        if (fn.length >= 1) {
+          fn(function () { stepIndex++; setTimeout(runStep, 0); });
+        } else {
+          fn();
+          stepIndex++;
+          setTimeout(runStep, 0);
+        }
       });
     }
     runStep();

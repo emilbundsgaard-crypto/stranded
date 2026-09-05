@@ -94,6 +94,21 @@
     // Solen står højt og lidt bag højre skulder set fra startstedet, så
     // sandbredden er solbeskinnet og klippernes skygger falder væk fra
     // betragteren. Lav sol så kløften kastede skygge over hele bredden.
-    sunDirection: { x: 0.36, y: 0.80, z: -0.48 }
+    sunDirection: { x: 0.36, y: 0.80, z: -0.48 },
+
+    // Albedo-rettelse for de fotografiske teksturer.
+    //
+    // Et foto af sand er ikke sandets albedo — solen sad allerede i
+    // billedet, da det blev taget. Bruger man det råt som diffus farve,
+    // bliver sandet dobbelt så lyst som virkeligheden og alt for mættet:
+    // sandets blå kanal er lav i et foto, så det brænder ud i et neongult
+    // felt, så snart fladen vender mod solen. Tallene her ganges på
+    // teksturen og trækker den ned mod en rigtig albedo — omtrent 0,36 for
+    // tørt sand og 0,30 for sten — og løfter samtidig den blå kanal, så
+    // farven bliver sand og ikke karry.
+    albedo: {
+      sand: { r: 0.72, g: 0.97, b: 1.80 },
+      rock: { r: 0.45, g: 0.57, b: 1.15 }
+    }
   };
 })();

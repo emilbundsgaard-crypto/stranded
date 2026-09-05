@@ -180,8 +180,26 @@ Det tunge lag — hvad der faktisk giver dybden:
   ambient occlusion, solstråler, bloom, vandets opløsning og til sidst
   billedopløsningen.
 
+## Teksturer og kreditering
+
+Sandet, gruset, klippernes overflade, vandets normalkort og kaustikken er
+fotografiske teksturer hentet fra frit tilgængelige samlinger på GitHub og
+skaleret ned til brug her. De ligger i `assets/` og pakkes ind i koden med
+`node tools/pack-assets.js`, fordi den samlede enkeltfil skal kunne åbnes
+uden internet.
+
+- `sand.jpg`, `ground.jpg`, `rock_normal.jpg`, `rock_grain.jpg` — [BabylonJS/Assets](https://github.com/BabylonJS/Assets),
+  Creative Commons Attribution 4.0 International (CC BY 4.0)
+- `sand_normal.jpg` — udledt af `sand.jpg` (Sobel-filter), afledt værk under samme licens
+- `water_normal.jpg`, `caustics.jpg` — [three.js](https://github.com/mrdoob/three.js)
+  (MIT); kaustikken stammer oprindeligt fra OpenGameArt
+
+Den fulde liste står i [`assets/CREDITS.md`](assets/CREDITS.md).
+
 ## Værktøjer
 
 - `tools/build.js` — samler alt til `dist/oasen.html`
 - `tools/shot.js` — tager skærmbilleder af faste udsigter med headless Chromium
   (`node tools/shot.js <mappe>`), brugt til at finpudse grafikken
+- `tools/pack-assets.js` — pakker teksturerne i `assets/` ind i
+  `src/22-assets.js` som data-URI'er; kør den efter ændringer i `assets/`

@@ -152,33 +152,77 @@
     },
 
     // Kaustik: sollys brudt gennem bølgerne, som det tegner sig på bunden.
-    caustics: function (mat, timeUniform, waterLevel) {
+    // To lag af det samme mønster, der glider hver sin vej — minimum af de
+    // to giver de skarpe, vandrende lysnet, man ser på lavt vand.
+    caustics: function (mat, timeUniform, waterLevel, map) {
       const uniforms = {
         uCausticTime: timeUniform,
-        uWaterLevel: { value: waterLevel }
+        uWaterLevel: { value: waterLevel },
+        uCausticMap: { value: map || null }
       };
       chain(mat, function (shader) {
         shader.uniforms.uCausticTime = uniforms.uCausticTime;
         shader.uniforms.uWaterLevel = uniforms.uWaterLevel;
+        shader.uniforms.uCausticMap = uniforms.uCausticMap;
         shader.fragmentShader =
-          'uniform float uCausticTime;\nuniform float uWaterLevel;\n' +
+          'uniform float uCausticTime;\nuniform float uWaterLevel;\nuniform sampler2D uCausticMap;\n' +
           shader.fragmentShader.replace(
             '#include <emissivemap_fragment>',
             `#include <emissivemap_fragment>
              {
                float wdepth = uWaterLevel - vFogWorld.y;
                if ( wdepth > 0.0 ) {
-                 vec2 cp = vFogWorld.xz;
-                 float t = uCausticTime;
-                 float c = sin( cp.x * 1.7 + sin( cp.y * 1.1 + t * 0.7 ) * 2.0 + t * 0.9 )
-                         + sin( cp.y * 1.9 - sin( cp.x * 1.3 - t * 0.5 ) * 2.0 + t * 1.1 );
-                 c = pow( clamp( c * 0.25 + 0.5, 0.0, 1.0 ), 6.0 );
+                 vec2 cp = vFogWorld.xz * 0.16;
+                 float t = uCausticTime * 0.03;
+                 float c1 = texture2D( uCausticMap, cp + vec2( t, t * 0.7 ) ).r;
+                 float c2 = texture2D( uCausticMap, cp * 1.37 - vec2( t * 0.8, t * 1.1 ) ).r;
+                 float c = min( c1, c2 );
+                 c = pow( c, 1.8 );
                  float atten = exp( -wdepth * 0.9 ) * ( 1.0 - smoothstep( 0.0, 2.2, wdepth ) );
-                 totalEmissiveRadiance += vec3( 1.0, 0.92, 0.72 ) * c * atten * 0.55;
+                 totalEmissiveRadiance += vec3( 1.0, 0.94, 0.76 ) * c * atten * 1.15;
                }
              }`
           );
       }, 'caustics');
+      return mat;
+    },
+
+    // Kornoverflade: et fotografisk stenbillede ganget oven på materialets
+    // egen farve. Det normaliseres på sin egen middelværdi, så det tilføjer
+    // struktur uden at flytte lysheden — ellers ville klippens lagdeling
+    // drukne i en grå plade.
+    grain: function (mat, texture, scale, strength, mean) {
+      // Laget kan lægges på flere gange med hver sin skala (grov plamage
+      // plus fint korn), så hvert lag får sine egne uniform-navne.
+      const i = (mat.userData.grainCount = (mat.userData.grainCount || 0) + 1);
+      const tN = 'tGrain' + i, sN = 'uGrainScale' + i;
+      const stN = 'uGrainStrength' + i, mN = 'uGrainMean' + i;
+      const uniforms = {};
+      uniforms[tN] = { value: texture };
+      uniforms[sN] = { value: scale };
+      uniforms[stN] = { value: strength };
+      uniforms[mN] = { value: new THREE.Vector3(mean[0], mean[1], mean[2]) };
+      mat.userData['grain' + i] = uniforms;
+      chain(mat, function (shader) {
+        shader.uniforms[tN] = uniforms[tN];
+        shader.uniforms[sN] = uniforms[sN];
+        shader.uniforms[stN] = uniforms[stN];
+        shader.uniforms[mN] = uniforms[mN];
+        shader.fragmentShader =
+          'uniform sampler2D ' + tN + ';\nuniform float ' + sN + ';\n' +
+          'uniform float ' + stN + ';\nuniform vec3 ' + mN + ';\n' +
+          shader.fragmentShader.replace(
+            '#include <map_fragment>',
+            `#include <map_fragment>
+             {
+               // Billedet er sRGB-kodet; her læses det råt, så det skal
+               // lineariseres, før det kan ganges på en lineær farve.
+               vec3 grainS = texture2D( ${tN}, vUv * ${sN} ).rgb;
+               vec3 grainC = pow( grainS, vec3( 2.2 ) ) / ${mN};
+               diffuseColor.rgb *= mix( vec3(1.0), grainC, ${stN} );
+             }`
+          );
+      }, 'grain' + i);
       return mat;
     },
 

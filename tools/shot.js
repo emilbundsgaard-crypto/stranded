@@ -28,7 +28,8 @@ const VIEWS = [
 
   const t0 = Date.now();
   const quality = (process.argv.find(a => a.startsWith('--quality=')) || '').split('=')[1] || 'ultra';
-  await page.goto('http://localhost:8123/index.html?quality=' + quality, { waitUntil: 'load' });
+  const extra = (process.argv.find(a => a.startsWith('--flags=')) || '').split('=')[1] || '';
+  await page.goto('http://localhost:8123/index.html?quality=' + quality + (extra ? '&' + extra : ''), { waitUntil: 'load' });
   await page.waitForFunction(() => window.OASIS && window.OASIS.debug, null, { timeout: 300000 });
   console.log('scene klar efter', ((Date.now() - t0) / 1000).toFixed(1), 's');
   const showHud = process.argv.includes('--hud');

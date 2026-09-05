@@ -146,7 +146,7 @@
     // en tydelig vandlinje lige over — dét er dét, øjet aflæser som "ligger
     // i vandet" frem for "står på vandet".
     O.shaderlib.waterline(body, O.config.waterLevel);
-    O.shaderlib.caustics(body, timeUniform, O.config.waterLevel);
+    if (tex.caustics) O.shaderlib.caustics(body, timeUniform, O.config.waterLevel, tex.caustics);
 
     const rubber = new THREE.MeshStandardMaterial({
       color: O.srgb(0x24211f), roughness: 0.95, metalness: 0.0, envMapIntensity: 0.3
@@ -370,7 +370,12 @@
     const mound = new THREE.Mesh(
       new THREE.SphereGeometry(1.0, 16, 10),
       new THREE.MeshStandardMaterial({
-        map: tex.sand, roughness: 1.0, color: O.srgb(0x9a8b76)
+        // Samme albedo-rettelse som terrænet, en anelse mørkere fordi
+        // banken ligger i vandkanten (se O.config.albedo).
+        map: tex.sand, roughness: 1.0,
+        color: new THREE.Color(O.config.albedo.sand.r * 0.82,
+                               O.config.albedo.sand.g * 0.82,
+                               O.config.albedo.sand.b * 0.82)
       })
     );
     mound.scale.set(1.0, 0.22, 0.8);

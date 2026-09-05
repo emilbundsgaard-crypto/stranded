@@ -398,6 +398,26 @@
     return new THREE.CanvasTexture(c);
   }
 
+  // Fotografiske teksturer slår håndlavet støj på det, øjet er bedst til at
+  // gennemskue: sandkorn, stenens overflade og vandets krusninger. Resten
+  // (sandstenens lagdeling, græs, skum) bliver ved med at være genereret,
+  // fordi den skal passe til netop denne verdens former.
+  // ?raw=1 slår de fotografiske teksturer fra, så vi kan sammenligne dem med
+  // de genererede uden at bygge om.
+  const RAW = /[?&]raw=1/.test(location.search);
+
+  function useAsset(name, repeat, srgb) {
+    if (RAW) return null;
+    const t = O.assets && O.assets.get ? O.assets.get(name) : null;
+    if (!t) return null;
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.anisotropy = maxAniso;
+    if (repeat) t.repeat.set(repeat, repeat);
+    if (srgb) t.encoding = THREE.sRGBEncoding;
+    t.needsUpdate = true;
+    return t;
+  }
+
   let cache = null;
   O.textures = {
     build: function (renderer) {
@@ -440,6 +460,25 @@
         glow: glowTexture(),
         spark: glowTexture('rgba(255,255,255,1)', 'rgba(200,230,255,0.5)')
       };
+      // Byt de genererede ud med de fotografiske, hvor der findes et bedre.
+      const realSand = useAsset('sand', 56, true);
+      if (realSand) cache.sand = realSand;
+      const realSandN = useAsset('sand_normal', 56, false);
+      if (realSandN) cache.sandNormal = realSandN;
+      const realGravel = useAsset('ground', 2, true);
+      if (realGravel) cache.stone = realGravel;
+      const realWaterN = useAsset('water_normal', 1, false);
+      if (realWaterN) cache.waterNormal = realWaterN;
+
+      // Klippens lagdeling bliver ved med at være genereret — den skal følge
+      // formationernes egne lag — men overfladen får rigtig stenstruktur.
+      cache.rockDetail = useAsset('rock_normal', 1, false) || cache.detailNormal;
+      cache.caustics = useAsset('caustics', 1, false);
+
+      // Kornoverfladen til klipperne. Den ganges oven på lagfarven, så
+      // sandstenen får rigtig struktur uden at miste sin lagdeling.
+      cache.rockGrain = useAsset('rock_grain', 1, false);
+
       return cache;
     }
   };

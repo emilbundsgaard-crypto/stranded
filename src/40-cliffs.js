@@ -331,7 +331,18 @@
       envMapIntensity: 0.9
     });
     if (O.quality.get('pom')) O.shaderlib.parallax(mat, tex.rockNormal, 0.022, 30.0);
-    O.shaderlib.detailNormal(mat, tex.detailNormal, 9.0, 0.45);
+    O.shaderlib.detailNormal(mat, tex.rockDetail || tex.detailNormal, 7.0, 0.6);
+    // Rigtig stenoverflade oven på den genererede lagfarve, i to skalaer:
+    // en grov, der bryder den ensartede orange flade i plamager, og en fin,
+    // der giver kornet, man ser, når man står med næsen i klippen. UV'et er
+    // buelængde (én flise pr. ~19 m), så 2.0 er ca. 10 m og 13.0 ca. 1,5 m.
+    // Middelværdien er målt på rock_grain.jpg i lineært rum, så lagene kun
+    // tilføjer struktur og ikke flytter klippens lyshed.
+    const GRAIN_MEAN = [0.347, 0.319, 0.279];
+    if (tex.rockGrain) {
+      O.shaderlib.grain(mat, tex.rockGrain, 2.0, 0.40, GRAIN_MEAN);
+      O.shaderlib.grain(mat, tex.rockGrain, 13.0, 0.45, GRAIN_MEAN);
+    }
     const mesh = new THREE.Mesh(geo, mat);
     mesh.castShadow = true;
     mesh.receiveShadow = true;

@@ -76,7 +76,11 @@
     geo.setAttribute('aWet', new THREE.BufferAttribute(wet, 1));
     geo.computeVertexNormals();
 
+    const A = O.config.albedo.sand;
     const mat = new THREE.MeshStandardMaterial({
+      // Farven her er ikke pynt: den trækker fotoet af sand ned til en
+      // rigtig albedo (se O.config.albedo).
+      color: new THREE.Color(A.r, A.g, A.b),
       map: tex.sand,
       normalMap: tex.sandNormal,
       normalScale: new THREE.Vector2(0.55, 0.55),
@@ -90,7 +94,7 @@
     O.shaderlib.detailNormal(mat, tex.detailNormal, 6.0, 0.30);
     O.shaderlib.macroVariation(mat, tex.macro, 0.030, 0.35);
     O.shaderlib.wetness(mat, 0.45);
-    O.shaderlib.caustics(mat, timeUniform, O.config.waterLevel);
+    if (tex.caustics) O.shaderlib.caustics(mat, timeUniform, O.config.waterLevel, tex.caustics);
 
     const mesh = new THREE.Mesh(geo, mat);
     mesh.receiveShadow = true;
