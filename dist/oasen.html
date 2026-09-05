@@ -3988,35 +3988,35 @@ uniform float shadowFar;
       shadowCascades: 4, shadowSize: 3072, shadowSoft: true,
       reflect: 1.0, refract: 0.85, ssao: 0.75, bloom: true, godrays: true, smaa: true,
       pom: true, plants: 2400, gravel: 2600, terrainSeg: 420, cliffCols: 96,
-      grassShadows: true, drawDistance: 1100
+      grassShadows: true, drawDistance: 1100, bladesPerCluster: 34
     },
     ultra: {
       label: 'Ultra', pixelRatio: 2.0,
       shadowCascades: 3, shadowSize: 2048, shadowSoft: true,
       reflect: 1.0, refract: 0.7, ssao: 0.5, bloom: true, godrays: true, smaa: true,
       pom: true, plants: 1500, gravel: 1500, terrainSeg: 300, cliffCols: 64,
-      grassShadows: true, drawDistance: 900
+      grassShadows: true, drawDistance: 900, bladesPerCluster: 24
     },
     high: {
       label: 'Høj', pixelRatio: 1.5,
       shadowCascades: 3, shadowSize: 1536, shadowSoft: true,
       reflect: 0.7, refract: 0.5, ssao: 0.5, bloom: true, godrays: true, smaa: true,
       pom: true, plants: 1200, gravel: 1200, terrainSeg: 260, cliffCols: 52,
-      grassShadows: true, drawDistance: 900
+      grassShadows: true, drawDistance: 900, bladesPerCluster: 16
     },
     medium: {
       label: 'Middel', pixelRatio: 1.25,
       shadowCascades: 2, shadowSize: 1024, shadowSoft: false,
       reflect: 0.5, refract: 0.4, ssao: 0, bloom: true, godrays: false, smaa: false,
       pom: false, plants: 900, gravel: 700, terrainSeg: 220, cliffCols: 40,
-      grassShadows: false, drawDistance: 800
+      grassShadows: false, drawDistance: 800, bladesPerCluster: 10
     },
     low: {
       label: 'Lav', pixelRatio: 1.0,
       shadowCascades: 2, shadowSize: 1024, shadowSoft: false,
       reflect: 0.35, refract: 0.3, ssao: 0, bloom: false, godrays: false, smaa: false,
       pom: false, plants: 550, gravel: 400, terrainSeg: 180, cliffCols: 30,
-      grassShadows: false, drawDistance: 700
+      grassShadows: false, drawDistance: 700, bladesPerCluster: 6
     }
   };
 
@@ -6088,6 +6088,43 @@ uniform float shadowFar;
     return out;
   }
 
+  // Et enkelt græsstrå: en buet, spids strimmel med bredden aftagende opad.
+  // Rigtige strimler i stedet for krydsende billeder er den enkeltting, der
+  // fjerner "flade papklip"-udseendet — hvert strå fanger lyset for sig.
+  function bladeGeometry(segments) {
+    const pos = [], uv = [], col = [], idx = [];
+    for (let i = 0; i <= segments; i++) {
+      const t = i / segments;
+      const y = t;
+      const w = 0.016 * (1 - t * t * 0.92);        // spidser til
+      const bend = t * t * 0.26;                   // bøjer fremad
+      pos.push(-w, y, bend, w, y, bend);
+      uv.push(0, t, 1, t);
+      // Mørk ved roden, lys i spidsen — sådan ser en græstot ud i sollys.
+      const shade = 0.40 + t * 0.85;
+      col.push(shade, shade * 1.02, shade * 0.86, shade, shade * 1.02, shade * 0.86);
+    }
+    for (let i = 0; i < segments; i++) {
+      const a = i * 2, b = i * 2 + 1, c = i * 2 + 2, d = i * 2 + 3;
+      idx.push(a, c, b, b, c, d);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    g.setIndex(idx);
+    g.computeVertexNormals();
+    // Normalerne trækkes mod lodret, så lyset over tottene bliver blødt
+    // i stedet for at hvert strå blinker sort og hvidt.
+    const n = g.attributes.normal.array;
+    for (let i = 0; i < n.length; i += 3) {
+      const x = n[i] * 0.55, y = n[i + 1] * 0.55 + 0.8, z = n[i + 2] * 0.55;
+      const l = Math.hypot(x, y, z);
+      n[i] = x / l; n[i + 1] = y / l; n[i + 2] = z / l;
+    }
+    return g;
+  }
+
   // Tre krydsende plader. Normalerne peger overvejende opad (blødt løvlys),
   // og vertexfarven gør bunden mørk og spidsen lys — en billig, men
   // overbevisende erstatning for gennemlyst løv.
@@ -6198,9 +6235,35 @@ uniform float shadowFar;
       return mat;
     }
 
+    function bladeMaterial(colorHex) {
+      const mat = new THREE.MeshStandardMaterial({
+        color: O.srgb(colorHex), roughness: 0.88, metalness: 0.0,
+        vertexColors: true, side: THREE.DoubleSide, envMapIntensity: 0.35
+      });
+      mat.onBeforeCompile = function (shader) {
+        shader.uniforms.uTime = timeUniform;
+        shader.vertexShader = 'uniform float uTime;\n' + shader.vertexShader.replace(
+          '#include <begin_vertex>',
+          `#include <begin_vertex>
+           vec3 iOrigin = instanceMatrix[3].xyz;
+           float wave = sin(uTime * 0.55 - iOrigin.x * 0.055 - iOrigin.z * 0.04);
+           float gust = 0.45 + 0.55 * wave * wave;
+           float phase = iOrigin.x * 0.33 + iOrigin.z * 0.27;
+           float sway = sin(uTime * 1.9 + phase) * 0.13 + sin(uTime * 3.7 + phase * 1.9) * 0.05;
+           float infl = clamp(position.y, 0.0, 1.0); infl *= infl;
+           transformed.x += sway * gust * infl;
+           transformed.z += sway * gust * infl * 0.6;`
+        );
+      };
+      mat.customProgramCacheKey = function () { return 'blade'; };
+      return mat;
+    }
+
+    const bladeGeo = bladeGeometry(4);
+
     const plantKinds = [
-      { key: 'fresh', mat: foliageMaterial(tex.grassFresh, 0xd8d8cc), list: [], tint: [] },
-      { key: 'dry',   mat: foliageMaterial(tex.grassDry, 0xd6d0b8), list: [], tint: [] },
+      { key: 'fresh', blade: true, mat: bladeMaterial(0x9fb257), list: [], tint: [] },
+      { key: 'dry',   blade: true, mat: bladeMaterial(0xbfae6a), list: [], tint: [] },
       { key: 'broad', mat: foliageMaterial(tex.grassBroad, 0xc8d0bc), list: [], tint: [] },
       { key: 'shrub', mat: foliageMaterial(tex.shrub, 0xc8bda6, 0.28), list: [], tint: [] }
     ];
@@ -6210,6 +6273,7 @@ uniform float shadowFar;
     // vandet, strå og buske længere oppe på den tørre bred.
     let clusters = 0, tries = 0;
     const PLANT_CLUSTERS = O.quality.get('plants');
+    const bladesPerCluster = O.quality.get('bladesPerCluster') || 10;
     while (clusters < PLANT_CLUSTERS && tries < PLANT_CLUSTERS * 60) {
       tries++;
       const cx = (rnd() - 0.5) * 250;
@@ -6222,28 +6286,37 @@ uniform float shadowFar;
       clusters++;
 
       const wetness = 1 - M.smoothstep(0.05, 1.5, ch);
-      const spread = 0.8 + rnd() * 3.4;
-      const n = 8 + (rnd() * 26 | 0);
+      // Stråene står tæt i totter — spreder man dem ud, ligner det spredte
+      // pinde i stedet for græs.
+      const spread = 0.30 + rnd() * 0.85;
+      const n = bladesPerCluster + (rnd() * bladesPerCluster * 0.8 | 0);
       for (let i = 0; i < n; i++) {
         const a = rnd() * 6.283;
-        const d = Math.pow(rnd(), 0.7) * spread;
+        const d = Math.pow(rnd(), 0.45) * spread;
         const x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d;
         const h = O.world.height(x, z);
         if (h < -0.55 || h > 2.6) continue;
 
         const roll = rnd();
-        let kind;
-        if (roll < wetness * 0.72) kind = plantKinds[0];            // friskt græs
-        else if (roll < 0.82) kind = plantKinds[1];                  // tørt strå
-        else kind = plantKinds[2];                                   // brede blade
+        const kind = roll < wetness * 0.75 ? plantKinds[0]
+                   : roll < 0.94 ? plantKinds[1]
+                   : plantKinds[2];
 
-        const reed = h < 0.12 && rnd() < 0.3;
-        const wide = (reed ? 0.30 : 0.40) + rnd() * 0.40;
-        const tall = reed ? 0.75 + rnd() * 0.7 : 0.22 + rnd() * 0.38;
-        kind.list.push({
-          x: x, y: h - 0.04, z: z, ry: rnd() * Math.PI,
-          sx: wide, sy: tall, sz: wide * (0.8 + rnd() * 0.4)
-        });
+        if (kind.blade) {
+          const reed = h < 0.14 && rnd() < 0.3;
+          const tall = reed ? 0.85 + rnd() * 0.9 : 0.20 + rnd() * 0.38;
+          kind.list.push({
+            x: x, y: h - 0.015, z: z,
+            rx: (rnd() - 0.5) * 0.5, ry: rnd() * 6.283, rz: (rnd() - 0.5) * 0.5,
+            sx: 0.75 + rnd() * 0.6, sy: tall, sz: 0.75 + rnd() * 0.6
+          });
+        } else {
+          const wide = 0.36 + rnd() * 0.36;
+          kind.list.push({
+            x: x, y: h - 0.04, z: z, ry: rnd() * Math.PI,
+            sx: wide, sy: 0.22 + rnd() * 0.3, sz: wide * (0.8 + rnd() * 0.4)
+          });
+        }
         kind.tint.push(1 - M.smoothstep(0.1, 1.4, h));
       }
 
@@ -6261,7 +6334,8 @@ uniform float shadowFar;
     const gc = new THREE.Color();
     for (const kind of plantKinds) {
       if (!kind.list.length) continue;
-      const im = instanced(tuftGeo, kind.mat, kind.list, O.quality.get('grassShadows'), true);
+      const im = instanced(kind.blade ? bladeGeo : tuftGeo, kind.mat, kind.list,
+                           O.quality.get('grassShadows') && !kind.blade, true);
       for (let i = 0; i < kind.list.length; i++) {
         const g = kind.tint[i];
         gc.setRGB(
@@ -6288,7 +6362,9 @@ uniform float shadowFar;
       envMapIntensity: 0.5
     });
 
-    const variants = [deformedRock(rnd, 1), deformedRock(rnd, 1), deformedRock(rnd, 1), deformedRock(rnd, 0)];
+    // Grusstenene får samme detaljegrad som de øvrige: en kegle med otte
+    // flader ligner ikke en sten, når man står med næsen i den.
+    const variants = [deformedRock(rnd, 1), deformedRock(rnd, 1), deformedRock(rnd, 1), deformedRock(rnd, 1)];
     const buckets = [[], [], [], []];
 
     // 1) Nedfaldsklippe ved kløftens fod — skjuler den hårde linje hvor
@@ -6331,11 +6407,11 @@ uniform float shadowFar;
       const x = (rnd() - 0.5) * 170, z = (rnd() - 0.5) * 210;
       const h = O.world.height(x, z);
       if (h < -0.7 || h > 2.2) continue;
-      const s = 0.035 + Math.pow(rnd(), 2.0) * 0.16;
+      const s = 0.025 + Math.pow(rnd(), 2.2) * 0.11;
       buckets[3].push({
-        x: x, y: h - s * 0.2, z: z,
-        rx: (rnd() - 0.5) * 1.2, ry: rnd() * 6.283, rz: (rnd() - 0.5) * 1.2,
-        sx: s * 1.4, sy: s * 0.8, sz: s * 1.3
+        x: x, y: h - s * 0.45, z: z,      // halvt nede i sandet
+        rx: (rnd() - 0.5) * 0.5, ry: rnd() * 6.283, rz: (rnd() - 0.5) * 0.5,
+        sx: s * 1.5, sy: s * 0.42, sz: s * 1.35
       });
       i++;
     }
@@ -6365,14 +6441,14 @@ uniform float shadowFar;
     const stickGeo = new THREE.CylinderGeometry(0.05, 0.08, 1, 6, 1);
     stickGeo.rotateZ(Math.PI / 2);
     const stickMat = new THREE.MeshStandardMaterial({
-      color: O.srgb(0x5b4835), roughness: 0.95, envMapIntensity: 0.3
+      color: O.srgb(0x8d7c63), roughness: 0.92, envMapIntensity: 0.35
     });
     const sticks = [];
     for (let i = 0, t = 0; i < 140 && t < 7000; t++) {
       const x = (rnd() - 0.5) * 160, z = (rnd() - 0.5) * 200;
       const h = O.world.height(x, z);
       if (h < -0.2 || h > 2.1) continue;
-      const len = 0.4 + Math.pow(rnd(), 1.6) * 2.6;
+      const len = 0.35 + Math.pow(rnd(), 1.8) * 1.7;
       sticks.push({
         x: x, y: h + 0.035, z: z,
         rx: (rnd() - 0.5) * 0.3, ry: rnd() * 6.283, rz: (rnd() - 0.5) * 0.2,
@@ -6886,6 +6962,179 @@ uniform float shadowFar;
 
 </script>
 <script>
+/* ---- src/78-tracks.js ---- */
+/* ------------------------------------------------------------------
+   Fodspor.
+
+   Hvert skridt sætter et aftryk i sandet, der bliver stående og falmer
+   langsomt væk. Aftrykkene tegnes som en pulje af små flader oven på
+   terrænet med multiplikativ blanding: teksturen er hvid udenom (som
+   ikke ændrer noget) og mørk indeni, så sandet bliver trykket sammen og
+   fugtigt netop dér, hvor støvlen har været.
+
+   Puljen genbruges — det ældste spor overskrives, når puljen er fuld,
+   så hukommelsen er den samme efter ti skridt som efter ti tusind.
+   ------------------------------------------------------------------ */
+(function () {
+  const O = window.OASIS;
+  const M = O.math;
+
+  const MAX = 220;          // hvor mange spor der ligger ad gangen
+  const LIFE = 90;          // sekunder før et spor er helt væk
+
+  // Støvlesål set oppefra: hæl, trædepude og et mønster imellem.
+  function bootTexture() {
+    const W = 128, H = 256;
+    const c = document.createElement('canvas');
+    c.width = W; c.height = H;
+    const ctx = c.getContext('2d');
+    ctx.clearRect(0, 0, W, H);
+
+    function sole(y0, y1, w0, w1, r) {
+      ctx.beginPath();
+      ctx.moveTo(W / 2 - w0 / 2, y0);
+      ctx.quadraticCurveTo(W / 2, y0 - r, W / 2 + w0 / 2, y0);
+      ctx.lineTo(W / 2 + w1 / 2, y1);
+      ctx.quadraticCurveTo(W / 2, y1 + r, W / 2 - w1 / 2, y1);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // Selve aftrykket: mørkt, fugtigt sand, presset sammen af sålen.
+    ctx.fillStyle = 'rgba(104,88,68,0.88)';
+    sole(26, 148, 70, 58, 22);          // forfod, rundet i tåen
+    sole(176, 236, 52, 42, 16);         // hæl, smallere
+
+    // Sålens mønster: kun antydninger, ellers ligner aftrykket en stige.
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    for (let i = 0; i < 5; i++) {
+      const y = 52 + i * 20;
+      const w = 44 - Math.abs(i - 2) * 5;
+      ctx.beginPath();
+      ctx.ellipse(W / 2, y, w / 2, 4, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.beginPath();
+    ctx.ellipse(W / 2, 202, 17, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+
+    // Sandet er trykket dybest i hæl og trædepude.
+    ctx.fillStyle = 'rgba(78,64,48,0.42)';
+    ctx.beginPath(); ctx.ellipse(W / 2, 120, 26, 20, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(W / 2, 206, 20, 16, 0, 0, Math.PI * 2); ctx.fill();
+
+    const t = new THREE.CanvasTexture(c);
+    t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+    t.anisotropy = 8;
+    return t;
+  }
+
+  const VERT = `
+    attribute float aAge;
+    varying float vAge;
+    varying vec2 vUv;
+    void main() {
+      vAge = aAge;
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4( position, 1.0 );
+    }
+  `;
+
+  const FRAG = `
+    uniform sampler2D map;
+    varying float vAge;
+    varying vec2 vUv;
+    void main() {
+      if ( vAge >= 1.0 ) discard;
+      vec4 t = texture2D( map, vUv );
+      // Multiplikativ blanding: hvid lader sandet i fred, mørkt trykker det ned.
+      float strength = t.a * ( 1.0 - vAge ) * ( 1.0 - vAge );
+      gl_FragColor = vec4( mix( vec3( 1.0 ), t.rgb, strength ), 1.0 );
+    }
+  `;
+
+  O.buildTracks = function (scene) {
+    const geo = new THREE.PlaneGeometry(0.145, 0.33);   // en støvlesål, ikke en dør
+    geo.rotateX(-Math.PI / 2);
+
+    const ages = new Float32Array(MAX).fill(2);   // 2 = tomt felt
+    geo.setAttribute('aAge', new THREE.InstancedBufferAttribute(ages, 1));
+
+    const mat = new THREE.ShaderMaterial({
+      vertexShader: VERT,
+      fragmentShader: FRAG,
+      uniforms: { map: { value: bootTexture() } },
+      blending: THREE.MultiplyBlending,
+      transparent: true,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -4,
+      polygonOffsetUnits: -4
+    });
+
+    const mesh = new THREE.InstancedMesh(geo, mat, MAX);
+    mesh.frustumCulled = false;
+    mesh.renderOrder = 6;          // efter terrænet, før vandet
+    mesh.count = MAX;
+    scene.add(mesh);
+
+    const dummy = new THREE.Object3D();
+    // Alle felter starter usynligt langt væk.
+    dummy.position.set(0, -9999, 0);
+    dummy.updateMatrix();
+    for (let i = 0; i < MAX; i++) mesh.setMatrixAt(i, dummy.matrix);
+    mesh.instanceMatrix.needsUpdate = true;
+
+    let next = 0;
+    let leftFoot = false;
+
+    return {
+      mesh: mesh,
+
+      // Sæt et aftryk. Kun på sand — ikke på dybt vand og ikke oppe i klippen.
+      step: function (pos, yaw, depth) {
+        if (depth > 0.35) return;
+        const ground = O.world.height(pos.x, pos.z);
+        if (ground < -0.6) return;
+
+        leftFoot = !leftFoot;
+        const side = leftFoot ? -0.10 : 0.10;
+        const cx = Math.cos(yaw), sx = Math.sin(yaw);
+        // Sidevektoren for retningen man går i.
+        const x = pos.x + cx * side;
+        const z = pos.z - sx * side;
+
+        dummy.position.set(x, O.world.height(x, z) + 0.012, z);
+        dummy.rotation.set(0, yaw + (Math.random() - 0.5) * 0.16, 0);
+        const s = 0.92 + Math.random() * 0.16;
+        dummy.scale.set(s, 1, s);
+        dummy.updateMatrix();
+
+        mesh.setMatrixAt(next, dummy.matrix);
+        ages[next] = 0;
+        mesh.instanceMatrix.needsUpdate = true;
+        geo.attributes.aAge.needsUpdate = true;
+        next = (next + 1) % MAX;
+      },
+
+      update: function (dt) {
+        let dirty = false;
+        for (let i = 0; i < MAX; i++) {
+          if (ages[i] < 1) {
+            ages[i] += dt / LIFE;
+            dirty = true;
+          }
+        }
+        if (dirty) geo.attributes.aAge.needsUpdate = true;
+      }
+    };
+  };
+})();
+
+</script>
+<script>
 /* ---- src/80-stones.js ---- */
 /* ------------------------------------------------------------------
    Stenene man samler op. De fleste er helt almindelige — men et
@@ -7123,6 +7372,8 @@ uniform float shadowFar;
   const EYE = 1.68;
   const WALK = 3.5;
   const RUN = 6.4;
+  const SWIM = 1.9;
+  const SWIM_DEPTH = 1.25;   // dybere end det, og man svømmer i stedet for at vade
 
   O.buildPlayer = function (camera, dom) {
     const state = {
@@ -7400,10 +7651,11 @@ uniform float shadowFar;
         const dx = x - c.x, dz = z - c.z;
         if (dx * dx + dz * dz < c.r * c.r) return true;
       }
-      if (O.world.waterDepth(x, z) > 1.15) return true;    // for dybt at vade i
+      // Vandet spærrer ikke længere: bliver det for dybt, svømmer man over.
+      // Det er dét, der gør det muligt at komme hele vejen rundt om oasen.
       const h = O.world.height(x, z);
-      if (h - fromH > 0.85) return true;                   // for stejlt at kravle op
-      if (Math.hypot(x, z * 0.62) > 165) return true;      // verdens kant
+      if (!state.swimming && h - fromH > 0.85) return true;   // for stejlt at kravle op
+      if (Math.hypot(x, z * 0.62) > 170) return true;         // verdens kant
       return false;
     }
 
@@ -7421,8 +7673,10 @@ uniform float shadowFar;
       let speed = sprint ? RUN : WALK;
 
       const depth = O.world.waterDepth(state.pos.x, state.pos.z);
-      state.inWater = M.clamp(depth / 1.15, 0, 1);
-      speed *= 1 - state.inWater * 0.55;
+      state.swimming = depth > SWIM_DEPTH;
+      state.inWater = M.clamp(depth / SWIM_DEPTH, 0, 1);
+      speed = state.swimming ? (sprint ? SWIM * 1.25 : SWIM)
+                             : speed * (1 - state.inWater * 0.5);
 
       forward.set(-Math.sin(state.yaw), 0, -Math.cos(state.yaw));
       right.set(Math.cos(state.yaw), 0, -Math.sin(state.yaw));
@@ -7474,11 +7728,16 @@ uniform float shadowFar;
       const bobY = Math.sin(state.bob * 2.0) * 0.055 * state.bobAmount;
       const bobX = Math.cos(state.bob) * 0.045 * state.bobAmount;
 
-      camera.position.set(
-        state.pos.x + bobX * 0.4,
-        Math.max(O.config.waterLevel + 0.35, state.pos.y + EYE - state.inWater * 0.12) + bobY,
-        state.pos.z
-      );
+      // Svømmende ligger hovedet lige over overfladen og vugger med bølgen.
+      let eyeY;
+      if (state.swimming) {
+        const swell = Math.sin(t * 0.9) * 0.045 + Math.sin(t * 1.7 + 1.3) * 0.025;
+        eyeY = O.config.waterLevel + 0.30 + swell;
+      } else {
+        eyeY = Math.max(O.config.waterLevel + 0.32,
+                        state.pos.y + EYE - state.inWater * 0.12) + bobY;
+      }
+      camera.position.set(state.pos.x + bobX * 0.4, eyeY, state.pos.z);
       camera.rotation.set(0, 0, 0);
       camera.rotateY(state.yaw);
       camera.rotateX(state.pitch);
@@ -7487,6 +7746,7 @@ uniform float shadowFar;
       // Hånden følger lidt efter og vipper i takt med skridtene.
       hand.position.x = 0.42 - bobX * 0.5;
       hand.position.y = -0.33 + bobY * 0.8 - state.bobAmount * 0.02;
+      hand.visible = !state.swimming;
       hand.rotation.z = 0.06 + Math.sin(state.bob * 2.0) * 0.05 * state.bobAmount;
       hand.rotation.x = Math.sin(state.bob) * 0.04 * state.bobAmount - state.pitch * 0.12;
 
@@ -8477,7 +8737,7 @@ uniform float shadowFar;
     scene.add(camera);
 
     const timeUniform = { value: 0 };
-    let tex, sky, terrain, cliffs, water, props, stones, player, audio, post, wreck;
+    let tex, sky, terrain, cliffs, water, props, stones, player, audio, post, wreck, tracks;
 
     const steps = [
       ['Blander sand og sten…', function () { tex = O.textures.build(renderer); }],
@@ -8489,6 +8749,7 @@ uniform float shadowFar;
       ['Efterlader et vrag i vandet…', function () { wreck = O.buildWreck(scene, tex, timeUniform); }],
       ['Sår græs og tænder bål…', function () { props = O.buildProps(scene, tex, timeUniform); }],
       ['Spreder sten på bredden…', function () { stones = O.buildStones(scene, tex); }],
+      ['Gør klar til fodspor…', function () { tracks = O.buildTracks(scene); }],
       ['Kobler skygger på…', function () {
         if (O.safeMode) return;
         const seen = new Set();
@@ -8555,7 +8816,7 @@ uniform float shadowFar;
     function start() {
       const clock = new THREE.Clock();
       let t = 0;
-      let stepDistance = 0;
+      let stepDistance = 0, printDistance = 0;
       let frames = 0, frameAcc = 0, reflectSkip = 0, quality = 1, degradeSteps = 0;
       let renderFailed = false;
       let bypassedPost = false, bypassedWater = false;
@@ -8669,12 +8930,20 @@ uniform float shadowFar;
 
         player.update(dt, t);
 
-        // Skridtlyde efter tilbagelagt afstand.
+        // Skridtlyde efter tilbagelagt afstand …
         stepDistance += player.speed * dt;
         if (stepDistance > (player.speed > 5 ? 2.1 : 1.7)) {
           stepDistance = 0;
           audio.step(player.inWater);
         }
+        // … og et fodspor for hvert skridt, som er kortere end lydens interval.
+        printDistance += player.speed * dt;
+        if (printDistance > 0.78 && !player.swimming) {
+          printDistance = 0;
+          tracks.step(player.pos, player.yaw,
+                      O.world.waterDepth(player.pos.x, player.pos.z));
+        }
+        tracks.update(dt);
         audio.setWaterProximity(1 - Math.min(1, Math.max(0,
           (O.world.river(player.pos.x, player.pos.z).d - O.world.river(player.pos.x, player.pos.z).w) / 22)));
 
@@ -8772,7 +9041,7 @@ uniform float shadowFar;
       O.debug = {
         frames: 0,
         scene: scene, camera: camera, renderer: renderer, player: player,
-        stones: stones, water: water, sky: sky, props: props, post: post, wreck: wreck,
+        stones: stones, water: water, sky: sky, props: props, post: post, wreck: wreck, tracks: tracks,
         terrain: terrain, cliffs: cliffs, hud: hud
       };
 

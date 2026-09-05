@@ -56,7 +56,7 @@
     scene.add(camera);
 
     const timeUniform = { value: 0 };
-    let tex, sky, terrain, cliffs, water, props, stones, player, audio, post, wreck;
+    let tex, sky, terrain, cliffs, water, props, stones, player, audio, post, wreck, tracks;
 
     const steps = [
       ['Blander sand og sten…', function () { tex = O.textures.build(renderer); }],
@@ -68,6 +68,7 @@
       ['Efterlader et vrag i vandet…', function () { wreck = O.buildWreck(scene, tex, timeUniform); }],
       ['Sår græs og tænder bål…', function () { props = O.buildProps(scene, tex, timeUniform); }],
       ['Spreder sten på bredden…', function () { stones = O.buildStones(scene, tex); }],
+      ['Gør klar til fodspor…', function () { tracks = O.buildTracks(scene); }],
       ['Kobler skygger på…', function () {
         if (O.safeMode) return;
         const seen = new Set();
@@ -134,7 +135,7 @@
     function start() {
       const clock = new THREE.Clock();
       let t = 0;
-      let stepDistance = 0;
+      let stepDistance = 0, printDistance = 0;
       let frames = 0, frameAcc = 0, reflectSkip = 0, quality = 1, degradeSteps = 0;
       let renderFailed = false;
       let bypassedPost = false, bypassedWater = false;
@@ -248,12 +249,20 @@
 
         player.update(dt, t);
 
-        // Skridtlyde efter tilbagelagt afstand.
+        // Skridtlyde efter tilbagelagt afstand …
         stepDistance += player.speed * dt;
         if (stepDistance > (player.speed > 5 ? 2.1 : 1.7)) {
           stepDistance = 0;
           audio.step(player.inWater);
         }
+        // … og et fodspor for hvert skridt, som er kortere end lydens interval.
+        printDistance += player.speed * dt;
+        if (printDistance > 0.78 && !player.swimming) {
+          printDistance = 0;
+          tracks.step(player.pos, player.yaw,
+                      O.world.waterDepth(player.pos.x, player.pos.z));
+        }
+        tracks.update(dt);
         audio.setWaterProximity(1 - Math.min(1, Math.max(0,
           (O.world.river(player.pos.x, player.pos.z).d - O.world.river(player.pos.x, player.pos.z).w) / 22)));
 
@@ -351,7 +360,7 @@
       O.debug = {
         frames: 0,
         scene: scene, camera: camera, renderer: renderer, player: player,
-        stones: stones, water: water, sky: sky, props: props, post: post, wreck: wreck,
+        stones: stones, water: water, sky: sky, props: props, post: post, wreck: wreck, tracks: tracks,
         terrain: terrain, cliffs: cliffs, hud: hud
       };
 

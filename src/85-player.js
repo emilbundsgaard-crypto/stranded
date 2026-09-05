@@ -9,6 +9,8 @@
   const EYE = 1.68;
   const WALK = 3.5;
   const RUN = 6.4;
+  const SWIM = 1.9;
+  const SWIM_DEPTH = 1.25;   // dybere end det, og man svømmer i stedet for at vade
 
   O.buildPlayer = function (camera, dom) {
     const state = {
@@ -286,10 +288,11 @@
         const dx = x - c.x, dz = z - c.z;
         if (dx * dx + dz * dz < c.r * c.r) return true;
       }
-      if (O.world.waterDepth(x, z) > 1.15) return true;    // for dybt at vade i
+      // Vandet spærrer ikke længere: bliver det for dybt, svømmer man over.
+      // Det er dét, der gør det muligt at komme hele vejen rundt om oasen.
       const h = O.world.height(x, z);
-      if (h - fromH > 0.85) return true;                   // for stejlt at kravle op
-      if (Math.hypot(x, z * 0.62) > 165) return true;      // verdens kant
+      if (!state.swimming && h - fromH > 0.85) return true;   // for stejlt at kravle op
+      if (Math.hypot(x, z * 0.62) > 170) return true;         // verdens kant
       return false;
     }
 
@@ -307,8 +310,10 @@
       let speed = sprint ? RUN : WALK;
 
       const depth = O.world.waterDepth(state.pos.x, state.pos.z);
-      state.inWater = M.clamp(depth / 1.15, 0, 1);
-      speed *= 1 - state.inWater * 0.55;
+      state.swimming = depth > SWIM_DEPTH;
+      state.inWater = M.clamp(depth / SWIM_DEPTH, 0, 1);
+      speed = state.swimming ? (sprint ? SWIM * 1.25 : SWIM)
+                             : speed * (1 - state.inWater * 0.5);
 
       forward.set(-Math.sin(state.yaw), 0, -Math.cos(state.yaw));
       right.set(Math.cos(state.yaw), 0, -Math.sin(state.yaw));
@@ -360,11 +365,16 @@
       const bobY = Math.sin(state.bob * 2.0) * 0.055 * state.bobAmount;
       const bobX = Math.cos(state.bob) * 0.045 * state.bobAmount;
 
-      camera.position.set(
-        state.pos.x + bobX * 0.4,
-        Math.max(O.config.waterLevel + 0.35, state.pos.y + EYE - state.inWater * 0.12) + bobY,
-        state.pos.z
-      );
+      // Svømmende ligger hovedet lige over overfladen og vugger med bølgen.
+      let eyeY;
+      if (state.swimming) {
+        const swell = Math.sin(t * 0.9) * 0.045 + Math.sin(t * 1.7 + 1.3) * 0.025;
+        eyeY = O.config.waterLevel + 0.30 + swell;
+      } else {
+        eyeY = Math.max(O.config.waterLevel + 0.32,
+                        state.pos.y + EYE - state.inWater * 0.12) + bobY;
+      }
+      camera.position.set(state.pos.x + bobX * 0.4, eyeY, state.pos.z);
       camera.rotation.set(0, 0, 0);
       camera.rotateY(state.yaw);
       camera.rotateX(state.pitch);
@@ -373,6 +383,7 @@
       // Hånden følger lidt efter og vipper i takt med skridtene.
       hand.position.x = 0.42 - bobX * 0.5;
       hand.position.y = -0.33 + bobY * 0.8 - state.bobAmount * 0.02;
+      hand.visible = !state.swimming;
       hand.rotation.z = 0.06 + Math.sin(state.bob * 2.0) * 0.05 * state.bobAmount;
       hand.rotation.x = Math.sin(state.bob) * 0.04 * state.bobAmount - state.pitch * 0.12;
 
