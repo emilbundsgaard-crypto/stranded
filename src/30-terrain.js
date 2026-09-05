@@ -36,7 +36,7 @@
     // er mipmappet væk på afstand.
     const patch = M.fbm(x * 0.013, z * 0.013, 3);
     const fine = M.fbm(x * 0.075, z * 0.075, 3);
-    const v = 1.0 + patch * 0.22 + fine * 0.09;
+    const v = 1.0 + patch * 0.30 + fine * 0.13;
     let r = 1.00 * v, g = (0.97 + patch * 0.03) * v, b = (0.90 + patch * 0.06) * v;
 
     // Vådt sand langs vandkanten er mørkere.
@@ -59,7 +59,10 @@
     }
 
     out.r = r; out.g = g; out.b = b;
-    out.grass = M.clamp(lush * (1 - sub) * (1 - cm * 0.92), 0, 1);
+    // Overgangen skærpes: uden det ligger der en tynd grøn hinde over hele
+    // stranden, og sand og græs smelter sammen til én olivenfarve i stedet
+    // for at være to forskellige ting med en kant imellem.
+    out.grass = M.clamp(M.smoothstep(0.30, 0.72, lush) * (1 - sub) * (1 - cm * 0.92), 0, 1);
     out.rock = M.clamp(rock * (1 - beach * 0.6) * (1 - sub * 0.7) * (1 - cm), 0, 1);
     out.wet = M.clamp(wet * 0.95 + sub * 0.5, 0, 1);
   }
